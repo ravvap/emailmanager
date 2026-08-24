@@ -1,0 +1,6 @@
+com\fdic\tip\emailmanager\controller\NoReplyMailboxControllerTest.class
+com\fdic\tip\emailmanager\controller\DataConnectionControllerTest.class
+com\fdic\tip\emailmanager\service\impl\DataConnectionServiceImplTest.class
+com\fdic\tip\emailmanager\controller\InternalDomainAllowlistControllerTest.class
+com\fdic\tip\emailmanager\service\impl\InternalDomainAllowlistServiceImplTest.class
+com\fdic\tip\emailmanager\service\impl\NoReplyMailboxServiceImplTest.class

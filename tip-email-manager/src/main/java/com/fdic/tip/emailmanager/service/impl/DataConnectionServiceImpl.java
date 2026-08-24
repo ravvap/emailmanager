@@ -1,0 +1,253 @@
+package com.fdic.tip.emailmanager.service.impl;
+
+import java.sql.Connection;
+import java.time.ZonedDateTime;
+import java.util.List;
+
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.jdbc.DataSourceBuilder;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
+
+import com.azure.core.credential.TokenRequestContext;
+import com.azure.identity.DefaultAzureCredentialBuilder;
+import com.fdic.tip.emailmanager.constant.AppConstants;
+import com.fdic.tip.emailmanager.dto.ConnectionTestResultDto;
+import com.fdic.tip.emailmanager.dto.DataConnectionDto;
+import com.fdic.tip.emailmanager.entity.DataConnection;
+import com.fdic.tip.emailmanager.entity.DatabaseLocation;
+import com.fdic.tip.emailmanager.mapper.DataConnectionMapper;
+import com.fdic.tip.emailmanager.repository.DataConnectionRepository;
+import com.fdic.tip.emailmanager.repository.DatabaseLocationRepository;
+import com.fdic.tip.emailmanager.service.DataConnectionService;
+import com.zaxxer.hikari.HikariDataSource;
+import com.azure.security.keyvault.secrets.SecretClient;
+import com.azure.security.keyvault.secrets.SecretClientBuilder;
+import lombok.RequiredArgsConstructor;
+/**
+ * Service implementation for managing Data Connections, handling auditing and soft deletes.
+ */
+@Service
+@RequiredArgsConstructor
+@Transactional(readOnly = true)
+public class DataConnectionServiceImpl implements DataConnectionService {
+
+    private final DataConnectionRepository repository;
+    private final DatabaseLocationRepository locationRepository;
+     private final DataConnectionMapper mapper;
+     
+     @Value("${azure.passwordless-enabled:false}")
+     private boolean passwordlessEnabled;
+
+     @Value("${app.db.dev-password:}")
+     private String devPassword;
+     // Scope for Azure Database for PostgreSQL.
+     // For Azure SQL, use: "https://database.windows.net/.default"
+     private static final String AZURE_POSTGRES_SCOPE = "https://ossrdbms-aad.database.windows.net/.default";
+     
+    /**
+     * {@inheritDoc}
+     */
+     @Override
+     @Transactional
+     public DataConnectionDto createConnection(DataConnectionDto dto, String username) {
+         if (repository.existsByNameAndDeletedAtIsNull(dto.getName())) {
+             throw new IllegalArgumentException(AppConstants.ERR_NAME_EXISTS);
+         }
+
+         DatabaseLocation location = locationRepository.findByIdAndDeletedAtIsNull(dto.getDatabaseLocationId())
+                 .orElseThrow(() -> new IllegalArgumentException(
+                         String.format("%s %d", AppConstants.ERR_LOCATION_NOT_FOUND, dto.getDatabaseLocationId())
+                 ));
+
+         DataConnection entity = mapper.toEntity(dto);
+         entity.setDatabaseLocation(location);
+         entity.setCreatedBy(username);
+         entity.setCreatedAt(ZonedDateTime.now());
+
+         DataConnection saved = repository.save(entity);
+
+         return mapper.toDto(saved);
+     }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    @Transactional
+    public DataConnectionDto updateConnection(Long id, DataConnectionDto dto, String username) {
+        DataConnection existing = repository.findByIdAndDeletedAtIsNull(id)
+                .orElseThrow(() -> new IllegalArgumentException(AppConstants.ERR_NOT_FOUND + id));
+
+        if (repository.existsByNameAndIdNotAndDeletedAtIsNull(dto.getName(), id)) {
+            throw new IllegalArgumentException(AppConstants.ERR_NAME_EXISTS);
+        }
+
+        DatabaseLocation location = locationRepository.findByIdAndDeletedAtIsNull(dto.getDatabaseLocationId())
+                .orElseThrow(() ->new IllegalArgumentException(
+                        String.format("%s %d", AppConstants.ERR_LOCATION_NOT_FOUND, dto.getDatabaseLocationId())
+                ));
+        boolean statusChanged = !existing.getStatus().equalsIgnoreCase(dto.getStatus());
+
+        mapper.updateEntityFromDto(dto, existing);
+        existing.setDatabaseLocation(location);
+        existing.setUpdatedBy(username);
+        existing.setUpdatedAt(ZonedDateTime.now());
+
+        DataConnection updated = repository.save(existing);
+        
+        String action = statusChanged ? AppConstants.ACTION_STATUS_CHANGE : AppConstants.ACTION_UPDATE;
+        logAudit(updated.getId(), action, username, "Updated connection: " + updated.getName());
+
+        return mapper.toDto(updated);
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    @Transactional
+    public void deleteConnection(Long id, String username) {
+        DataConnection connection = repository.findByIdAndDeletedAtIsNull(id)
+                .orElseThrow(() -> new IllegalArgumentException(AppConstants.ERR_NOT_FOUND + id));
+
+        if (connection.isUsedInTemplate()) {
+            throw new IllegalStateException(AppConstants.ERR_CANNOT_DELETE_USED);
+        }
+
+        if (!AppConstants.STATUS_INACTIVE.equalsIgnoreCase(connection.getStatus())) {
+            throw new IllegalStateException(AppConstants.ERR_CANNOT_DELETE_ACTIVE);
+        }
+
+        connection.setDeletedBy(username);
+        connection.setDeletedAt(ZonedDateTime.now());
+        repository.save(connection);
+
+        logAudit(id, AppConstants.ACTION_DELETE, username, "Soft deleted connection ID: " + id);
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public List<DataConnectionDto> getAllConnections() {
+        return repository.findByDeletedAtIsNull().stream()
+                .map(mapper::toDto)
+                .toList();
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public List<DataConnectionDto> getActiveConnectionsForAuthor(Long userId) {
+        return repository.findByStatusAndAuthorUserIdsContainingAndDeletedAtIsNull(AppConstants.STATUS_ACTIVE, userId)
+                .stream()
+                .map(mapper::toDto)
+                .toList();
+    }
+
+	@Override
+	public List<DataConnectionDto> getActiveConnectionsForAuthor(String username) {
+		// TODO Auto-generated method stub
+		return null;
+	}
+
+	@Override
+    public ConnectionTestResultDto testConnection(DataConnectionDto dto) {
+        DatabaseLocation location = locationRepository.findByIdAndDeletedAtIsNull(dto.getDatabaseLocationId())
+                .orElseThrow(() -> new IllegalArgumentException("Database location not found with ID: " + dto.getDatabaseLocationId()));
+
+        String jdbcUrl = String.format("jdbc:postgresql://%s:%d/%s", 
+                location.getHostname(), location.getPort(), location.getServiceName());
+
+        String username = location.getUsername();
+        long startTime = System.currentTimeMillis();
+
+        try {
+            String credentialSecret = resolveCredential(dto.getPassword(), location.getVaultCredentialRef());
+
+            try (HikariDataSource dataSource = DataSourceBuilder.create()
+                    .type(HikariDataSource.class)
+                    .driverClassName("org.postgresql.Driver")
+                    .url(jdbcUrl)
+                    .username(username)
+                    .password(credentialSecret)
+                    .build()) {
+
+                dataSource.setConnectionTimeout(5000);
+                dataSource.setInitializationFailTimeout(1);
+                dataSource.setMaximumPoolSize(1);
+
+                try (Connection conn = dataSource.getConnection()) {
+                    long duration = System.currentTimeMillis() - startTime;
+
+                    if (conn.isValid(3)) {
+                        return ConnectionTestResultDto.builder()
+                                .connected(true)
+                                .message("Database connection test successful.")
+                                .responseTimeMs(duration)
+                                .build();
+                    }
+                }
+            }
+        } catch (Exception e) {
+         //   log.error("Failed database connection test for {}: {}", jdbcUrl, e.getMessage());
+            long duration = System.currentTimeMillis() - startTime;
+            return ConnectionTestResultDto.builder()
+                    .connected(false)
+                    .message("Connection failed: " + e.getMessage())
+                    .responseTimeMs(duration)
+                    .build();
+        }
+
+        return ConnectionTestResultDto.builder()
+                .connected(false)
+                .message("Connection validation failed.")
+                .responseTimeMs(System.currentTimeMillis() - startTime)
+                .build();
+    }
+
+    private String resolveCredential(String overridePassword, String vaultReference) {
+        // 1. Production Mode: Azure Managed Identity passwordless token
+        if (passwordlessEnabled) {
+        //    log.info("Azure Passwordless mode enabled. Requesting Managed Identity token...");
+            var credential = new DefaultAzureCredentialBuilder().build();
+            var requestContext = new TokenRequestContext().addScopes(AZURE_POSTGRES_SCOPE);
+            return credential.getTokenSync(requestContext).getToken();
+        }
+
+        // 2. Local DTO Override Password (runtime payload)
+        if (StringUtils.hasText(overridePassword)) {
+           // log.info("Using DTO override password for local connection testing.");
+            return overridePassword;
+        }
+
+        // 3. Local/Dev YAML Configured Password
+        if (StringUtils.hasText(devPassword)) {
+          //  log.info("Using application-dev.yml password.");
+            return devPassword;
+        }
+
+        // 4. Azure Key Vault Secret Fallback
+        if (StringUtils.hasText(vaultReference)) {
+         //   log.info("Fetching database secret from Key Vault reference: {}", vaultReference);
+            SecretClient secretClient = new SecretClientBuilder()
+                    .vaultUrl(vaultReference)
+                    .credential(new DefaultAzureCredentialBuilder().build())
+                    .buildClient();
+            return secretClient.getSecret(vaultReference).getValue();
+        }
+
+        throw new IllegalStateException("No valid database credential configured for non-passwordless mode.");
+    }
+	private void logAudit(Long id, String action, String username, String details) {
+		/*
+		 * auditLogRepository.save(AuditLog.builder() .entityName("DataConnection")
+		 * .entityId(id) .actionType(action) .performedBy(username)
+		 * .timestamp(ZonedDateTime.now()) .details(details) .build());
+		 */
+    }
+     
+}
