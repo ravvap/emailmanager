@@ -1,4 +1,0 @@
--------------------------------------------------------------------------------
-Test set: com.fdic.tip.emailmanager.service.impl.NoReplyMailboxServiceImplTest
--------------------------------------------------------------------------------
-Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.139 s -- in com.fdic.tip.emailmanager.service.impl.NoReplyMailboxServiceImplTest

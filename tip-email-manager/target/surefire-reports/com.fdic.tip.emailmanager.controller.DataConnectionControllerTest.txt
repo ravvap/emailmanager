@@ -1,4 +1,0 @@
--------------------------------------------------------------------------------
-Test set: com.fdic.tip.emailmanager.controller.DataConnectionControllerTest
--------------------------------------------------------------------------------
-Tests run: 8, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 4.495 s -- in com.fdic.tip.emailmanager.controller.DataConnectionControllerTest
