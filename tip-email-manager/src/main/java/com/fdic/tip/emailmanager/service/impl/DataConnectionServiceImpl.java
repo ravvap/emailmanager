@@ -266,4 +266,17 @@ public class DataConnectionServiceImpl implements DataConnectionService {
 		 */
     }
      
+	private final AppUserRepository appUserRepository;
+
+    @Override
+    public List<AuthorDropdownDto> getEligibleAuthors() {
+        return appUserRepository.findActiveAdminUsers().stream()
+                .map(user -> AuthorDropdownDto.builder()
+                        .id(user.getId())
+                        .username(user.getUsername())
+                        .displayName(StringUtils.hasText(user.getDisplayName()) ? user.getDisplayName() : user.getUsername())
+                        .emailAddress(user.getEmailAddress())
+                        .build())
+                .toList();
+    }
 }

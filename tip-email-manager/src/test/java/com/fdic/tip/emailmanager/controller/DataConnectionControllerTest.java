@@ -178,4 +178,23 @@ class DataConnectionControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.connected").value(true));
     }
+    
+    @Test
+    void getEligibleAuthors_ReturnsList() throws Exception {
+        AuthorDropdownDto author = AuthorDropdownDto.builder()
+                .id(100L)
+                .username("adminUser")
+                .displayName("System Admin")
+                .emailAddress("admin@fdic.gov")
+                .build();
+
+        when(service.getEligibleAuthors()).thenReturn(List.of(author));
+
+        mockMvc.perform(get("/api/v1/data-connections/authors")
+                        .principal(mockPrincipal))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].id").value(100))
+                .andExpect(jsonPath("$[0].username").value("adminUser"))
+                .andExpect(jsonPath("$[0].displayName").value("System Admin"));
+    }
 }

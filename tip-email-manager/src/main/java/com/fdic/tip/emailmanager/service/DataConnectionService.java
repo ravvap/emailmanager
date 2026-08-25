@@ -20,4 +20,6 @@ public interface DataConnectionService {
 	
     void deleteConnection(Long id, String username);
 	ConnectionTestResultDto testConnection(DataConnectionDto dto);
+	
+	List<AuthorDropdownDto> getEligibleAuthors();
 }

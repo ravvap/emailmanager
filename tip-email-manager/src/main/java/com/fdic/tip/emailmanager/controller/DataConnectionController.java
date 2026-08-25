@@ -134,4 +134,11 @@ public class DataConnectionController {
         ConnectionTestResultDto result = service.testConnection(dto);
         return ResponseEntity.ok(result);
     }
+    
+    @GetMapping("/authors")
+    @Operation(summary = "Get list of active admin users eligible to be connection authors")
+    public ResponseEntity<List<AuthorDropdownDto>> getEligibleAuthors() {
+        List<AuthorDropdownDto> authors = service.getEligibleAuthors();
+        return ResponseEntity.ok(authors);
+    }
 }
