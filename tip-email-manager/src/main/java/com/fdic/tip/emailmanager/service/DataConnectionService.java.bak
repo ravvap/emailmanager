@@ -18,6 +18,5 @@ public interface DataConnectionService {
 	 */
 	List<DataConnectionDto> getActiveConnectionsForAuthor(Long userId);
 	
-    void deleteConnection(Long id, String username);
 	ConnectionTestResultDto testConnection(DataConnectionDto dto);
 }

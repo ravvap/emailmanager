@@ -175,9 +175,6 @@ public class DataConnectionServiceImpl implements DataConnectionService {
         String jdbcUrl = String.format("jdbc:postgresql://%s:%d/%s", 
                 location.getHostname(), location.getPort(), location.getServiceName());
 
-        String vaultCredentialRef = StringUtils.hasText(dto.getVaultCredentialRef())
-                ? dto.getVaultCredentialRef()
-                : location.getVaultCredentialRef();
         String username = location.getUsername();
         long startTime = System.currentTimeMillis();
 

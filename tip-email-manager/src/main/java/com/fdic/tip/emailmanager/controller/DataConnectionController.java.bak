@@ -54,20 +54,6 @@ public class DataConnectionController {
         return ResponseEntity.ok(service.getAllConnections());
     }
 
-/**
-     * Previously missing entirely: there was no way for an author to reach
-     * getActiveConnectionsForAuthor(String) even after fixing the stub, since nothing on
-     * this controller called it. Authors (not just tipadmin) need this - the whole point
-     * is "authors simply pick from the active, authorized connections" per EM-1.
-     */
-    @Operation(summary = "Get active connections available to the current author",
-            description = "Returns Active connections the calling user is authorized to use, for template authoring.")
-    @GetMapping("/active")
-    @PreAuthorize("hasAnyRole('TIPADMIN', 'AUTHOR')")
-    public ResponseEntity<List<DataConnectionDto>> getActiveConnectionsForCurrentUser(Principal principal) {
-        return ResponseEntity.ok(service.getActiveConnectionsForAuthor(principal.getName()));
-    }
-
     /**
      * Creates a new Data Connection entity.
      *
