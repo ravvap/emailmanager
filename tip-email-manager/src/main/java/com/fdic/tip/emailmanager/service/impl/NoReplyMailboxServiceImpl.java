@@ -1,6 +1,6 @@
 package com.fdic.tip.emailmanager.service.impl;
 
- import java.time.ZonedDateTime;
+import java.time.ZonedDateTime;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -14,7 +14,9 @@ import com.fdic.tip.emailmanager.service.AzureMailboxConfigService;
 import com.fdic.tip.emailmanager.service.NoReplyMailboxService;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
@@ -23,7 +25,7 @@ public class NoReplyMailboxServiceImpl implements NoReplyMailboxService {
     private static final Long SINGLETON_ID = 1L;
 
     private final NoReplyMailboxRepository repository;
-     private final NoReplyMailboxMapper mapper;
+    private final NoReplyMailboxMapper mapper;
     private final AzureMailboxConfigService azureMailboxConfigService;
 
     @Override
@@ -40,8 +42,13 @@ public class NoReplyMailboxServiceImpl implements NoReplyMailboxService {
             throw new IllegalArgumentException("Email address is already in use: " + dto.getEmailAddress());
         }
 
-        // Configure mailbox settings in Azure Cloud
-        azureMailboxConfigService.configureAzureMailbox(dto.getEmailAddress());
+        // Configure mailbox settings in Azure Cloud (Fault-tolerant execution)
+        try {
+            azureMailboxConfigService.configureAzureMailbox(dto.getEmailAddress());
+        } catch (Exception e) {
+            log.warn("Azure Cloud Mailbox configuration failed for {}: {}. Proceeding to save in database.",
+                    dto.getEmailAddress(), e.getMessage());
+        }
 
         boolean exists = repository.existsById(SINGLETON_ID);
 
@@ -74,8 +81,13 @@ public class NoReplyMailboxServiceImpl implements NoReplyMailboxService {
         NoReplyMailbox mailbox = repository.findByIdAndDeletedAtIsNull(SINGLETON_ID)
                 .orElseThrow(() -> new IllegalArgumentException("No-Reply Mailbox configuration not found."));
 
-        // Disable Azure Cloud integration
-        azureMailboxConfigService.disableAzureMailbox(mailbox.getEmailAddress());
+        // Disable Azure Cloud integration (Fault-tolerant execution)
+        try {
+            azureMailboxConfigService.disableAzureMailbox(mailbox.getEmailAddress());
+        } catch (Exception e) {
+            log.warn("Disabling Azure Cloud Mailbox failed for {}: {}. Proceeding with soft delete in database.",
+                    mailbox.getEmailAddress(), e.getMessage());
+        }
 
         mailbox.setDeletedBy(username);
         mailbox.setDeletedAt(ZonedDateTime.now());
@@ -85,10 +97,10 @@ public class NoReplyMailboxServiceImpl implements NoReplyMailboxService {
     }
 
     private void logAudit(Long id, String action, String username, String details) {
-		/*
-		 * auditLogRepository.save(AuditLog.builder() .entityName("NoReplyMailbox")
-		 * .entityId(id) .actionType(action) .performedBy(username)
-		 * .timestamp(ZonedDateTime.now()) .details(details) .build());
-		 */
+        /*
+         * auditLogRepository.save(AuditLog.builder() .entityName("NoReplyMailbox")
+         * .entityId(id) .actionType(action) .performedBy(username)
+         * .timestamp(ZonedDateTime.now()) .details(details) .build());
+         */
     }
 }
