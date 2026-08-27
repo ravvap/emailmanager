@@ -1,144 +1,252 @@
-package com.fdic.tip.emailmanager.controller;
+package gov.fdic.tip.emailmanager.controller;
 
-import java.security.Principal;
 import java.util.List;
+import java.util.Map;
 
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.web.bind.annotation.DeleteMapping;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.PutMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.web.bind.annotation.*;
 
-import com.fdic.tip.emailmanager.constant.AppConstants;
-import com.fdic.tip.emailmanager.dto.ConnectionTestResultDto;
-import com.fdic.tip.emailmanager.dto.DataConnectionDto;
-import com.fdic.tip.emailmanager.service.DataConnectionService;
-
-import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.responses.ApiResponse;
-import io.swagger.v3.oas.annotations.responses.ApiResponses;
-import io.swagger.v3.oas.annotations.tags.Tag;
+import gov.fdic.tip.emailmanager.dto.BusinessAuditEvent;
+import gov.fdic.tip.emailmanager.dto.DataConnectionDto;
+import gov.fdic.tip.emailmanager.dto.TestConnectionRequest;
+import gov.fdic.tip.emailmanager.enums.ActorType;
+import gov.fdic.tip.emailmanager.service.BusinessAuditService;
+import gov.fdic.tip.emailmanager.service.DataConnectionService;
+import gov.fdic.tip.emailmanager.util.LoggerHelper;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 
-/**
- * Controller providing REST API endpoints for Data Connection operations.
- */
 @RestController
 @RequestMapping("/api/v1/data-connections")
 @RequiredArgsConstructor
-@Tag(name = "Data Connections", description = "APIs for managing database data connections")
 public class DataConnectionController {
 
-    private final DataConnectionService service;
+    private final DataConnectionService dataConnectionService;
+    private final BusinessAuditService businessAuditService;
+    private final LoggerHelper loggerHelper;
 
-    /**
-     * Retrieves all active, non-deleted Data Connections.
-     *
-     * @return List of Data Connections
-     */
-    @Operation(summary = "Get all data connections", description = "Retrieves all active data connections that have not been soft deleted.")
-    @ApiResponses({
-        @ApiResponse(responseCode = "200", description = "Data connections retrieved successfully"),
-        @ApiResponse(responseCode = "403", description = "Unauthorized access")
-    })
     @GetMapping
-    @PreAuthorize(AppConstants.HAS_ROLE_ADMIN)
-    public ResponseEntity<List<DataConnectionDto>> getAllConnections() {
-        return ResponseEntity.ok(service.getAllConnections());
+    public ResponseEntity<List<DataConnectionDto>> getAllConnections(Authentication authentication) {
+        String actorEmail = resolveUserEmail(authentication);
+
+        try {
+            List<DataConnectionDto> connections = dataConnectionService.getAllConnections();
+
+            emitAuditEvent(
+                "DATA_CONNECTION_READ_ALL",
+                "ALL",
+                "Data Connections List",
+                ActorType.USER,
+                actorEmail,
+                actorEmail,
+                Map.of("count", connections.size()),
+                "SUCCESS"
+            );
+
+            return ResponseEntity.ok(connections);
+        } catch (Exception e) {
+            emitAuditEvent(
+                "DATA_CONNECTION_READ_ALL",
+                "ALL",
+                "Data Connections List",
+                ActorType.USER,
+                actorEmail,
+                actorEmail,
+                Map.of("error", e.getMessage()),
+                "FAILURE"
+            );
+            throw e;
+        }
     }
 
-/**
-     * Previously missing entirely: there was no way for an author to reach
-     * getActiveConnectionsForAuthor(String) even after fixing the stub, since nothing on
-     * this controller called it. Authors (not just tipadmin) need this - the whole point
-     * is "authors simply pick from the active, authorized connections" per EM-1.
-     */
-    @Operation(summary = "Get active connections available to the current author",
-            description = "Returns Active connections the calling user is authorized to use, for template authoring.")
-    @GetMapping("/active")
-    @PreAuthorize("hasAnyRole('TIPADMIN', 'AUTHOR')")
-    public ResponseEntity<List<DataConnectionDto>> getActiveConnectionsForCurrentUser(Principal principal) {
-        return ResponseEntity.ok(service.getActiveConnectionsForAuthor(principal.getName()));
-    }
-
-    /**
-     * Creates a new Data Connection entity.
-     *
-     * @param dto Data payload
-     * @param principal Principal user context
-     * @return Created DataConnectionDto
-     */
-    @Operation(summary = "Create data connection", description = "Creates a new data connection with assigned authors.")
-    @ApiResponses({
-        @ApiResponse(responseCode = "201", description = "Data connection created successfully"),
-        @ApiResponse(responseCode = "400", description = "Validation error or duplicate name"),
-        @ApiResponse(responseCode = "403", description = "Unauthorized access")
-    })
     @PostMapping
-    @PreAuthorize(AppConstants.HAS_ROLE_ADMIN)
-    public ResponseEntity<DataConnectionDto> createConnection(@Valid @RequestBody DataConnectionDto dto, Principal principal) {
-        return new ResponseEntity<>(service.createConnection(dto, principal.getName()), HttpStatus.CREATED);
+    public ResponseEntity<DataConnectionDto> createConnection(
+            @Valid @RequestBody DataConnectionDto dto,
+            Authentication authentication) {
+
+        String actorEmail = resolveUserEmail(authentication);
+
+        try {
+            DataConnectionDto created = dataConnectionService.createConnection(dto, actorEmail);
+
+            emitAuditEvent(
+                "DATA_CONNECTION_CREATE",
+                String.valueOf(created.getId()),
+                created.getName(),
+                ActorType.USER,
+                actorEmail,
+                actorEmail,
+                Map.of("connectionName", created.getName(), "status", created.getStatus()),
+                "SUCCESS"
+            );
+
+            return ResponseEntity.status(HttpStatus.CREATED).body(created);
+        } catch (Exception e) {
+            emitAuditEvent(
+                "DATA_CONNECTION_CREATE",
+                "UNKNOWN",
+                dto.getName(),
+                ActorType.USER,
+                actorEmail,
+                actorEmail,
+                Map.of("error", e.getMessage()),
+                "FAILURE"
+            );
+            throw e;
+        }
     }
 
-    /**
-     * Updates an existing Data Connection entity.
-     *
-     * @param id Connection ID
-     * @param dto Updated payload
-     * @param principal Principal user context
-     * @return Updated DataConnectionDto
-     */
-    @Operation(summary = "Update data connection", description = "Updates details and configuration of an existing data connection.")
-    @ApiResponses({
-        @ApiResponse(responseCode = "200", description = "Data connection updated successfully"),
-        @ApiResponse(responseCode = "404", description = "Connection record not found"),
-        @ApiResponse(responseCode = "400", description = "Validation error")
-    })
     @PutMapping("/{id}")
-    @PreAuthorize(AppConstants.HAS_ROLE_ADMIN)
-    public ResponseEntity<DataConnectionDto> updateConnection(@PathVariable Long id, @Valid @RequestBody DataConnectionDto dto, Principal principal) {
-        return ResponseEntity.ok(service.updateConnection(id, dto, principal.getName()));
+    public ResponseEntity<DataConnectionDto> updateConnection(
+            @PathVariable Long id,
+            @Valid @RequestBody DataConnectionDto dto,
+            Authentication authentication) {
+
+        String actorEmail = resolveUserEmail(authentication);
+
+        try {
+            DataConnectionDto updated = dataConnectionService.updateConnection(id, dto, actorEmail);
+
+            emitAuditEvent(
+                "DATA_CONNECTION_UPDATE",
+                String.valueOf(id),
+                updated.getName(),
+                ActorType.USER,
+                actorEmail,
+                actorEmail,
+                Map.of("connectionName", updated.getName(), "status", updated.getStatus()),
+                "SUCCESS"
+            );
+
+            return ResponseEntity.ok(updated);
+        } catch (Exception e) {
+            emitAuditEvent(
+                "DATA_CONNECTION_UPDATE",
+                String.valueOf(id),
+                dto.getName(),
+                ActorType.USER,
+                actorEmail,
+                actorEmail,
+                Map.of("error", e.getMessage()),
+                "FAILURE"
+            );
+            throw e;
+        }
     }
 
-    /**
-     * Soft-deletes a Data Connection entity.
-     *
-     * @param id Connection ID to soft-delete
-     * @param principal Principal user context
-     * @return Confirmation message
-     */
-    @Operation(summary = "Soft delete data connection", description = "Performs a soft delete on a data connection if it is INACTIVE and not used in a template.")
-    @ApiResponses({
-        @ApiResponse(responseCode = "200", description = "Data connection soft deleted successfully"),
-        @ApiResponse(responseCode = "400", description = "Cannot delete active connection or connection linked to a template"),
-        @ApiResponse(responseCode = "404", description = "Connection record not found")
-    })
     @DeleteMapping("/{id}")
-    @PreAuthorize(AppConstants.HAS_ROLE_ADMIN)
-    public ResponseEntity<String> deleteConnection(@PathVariable Long id, Principal principal) {
-        service.deleteConnection(id, principal.getName());
-        return ResponseEntity.ok(AppConstants.MSG_CONNECTION_DELETED);
+    public ResponseEntity<Void> deleteConnection(
+            @PathVariable Long id,
+            Authentication authentication) {
+
+        String actorEmail = resolveUserEmail(authentication);
+
+        try {
+            dataConnectionService.deleteConnection(id, actorEmail);
+
+            emitAuditEvent(
+                "DATA_CONNECTION_DELETE",
+                String.valueOf(id),
+                "Data Connection " + id,
+                ActorType.USER,
+                actorEmail,
+                actorEmail,
+                Map.of("action", "DELETE"),
+                "SUCCESS"
+            );
+
+            return ResponseEntity.noContent().build();
+        } catch (Exception e) {
+            emitAuditEvent(
+                "DATA_CONNECTION_DELETE",
+                String.valueOf(id),
+                "Data Connection " + id,
+                ActorType.USER,
+                actorEmail,
+                actorEmail,
+                Map.of("error", e.getMessage()),
+                "FAILURE"
+            );
+            throw e;
+        }
     }
-    
+
     @PostMapping("/test")
-    @Operation(summary = "Test database connection details before saving")
-    public ResponseEntity<ConnectionTestResultDto> testConnection(
-            @Valid @RequestBody DataConnectionDto dto) {
-        ConnectionTestResultDto result = service.testConnection(dto);
-        return ResponseEntity.ok(result);
+    public ResponseEntity<Boolean> testConnection(
+            @Valid @RequestBody TestConnectionRequest request,
+            Authentication authentication) {
+
+        String actorEmail = resolveUserEmail(authentication);
+
+        try {
+            boolean isSuccessful = dataConnectionService.testConnection(request);
+
+            emitAuditEvent(
+                "DATA_CONNECTION_TEST",
+                String.valueOf(request.getDatabaseLocationId()),
+                "Test Connection Request",
+                ActorType.USER,
+                actorEmail,
+                actorEmail,
+                Map.of("databaseLocationId", request.getDatabaseLocationId(), "testResult", isSuccessful),
+                isSuccessful ? "SUCCESS" : "FAILURE"
+            );
+
+            return ResponseEntity.ok(isSuccessful);
+        } catch (Exception e) {
+            emitAuditEvent(
+                "DATA_CONNECTION_TEST",
+                String.valueOf(request.getDatabaseLocationId()),
+                "Test Connection Request",
+                ActorType.USER,
+                actorEmail,
+                actorEmail,
+                Map.of("error", e.getMessage()),
+                "FAILURE"
+            );
+            throw e;
+        }
     }
-    
-    @GetMapping("/authors")
-    @Operation(summary = "Get list of active admin users eligible to be connection authors")
-    public ResponseEntity<List<AuthorDropdownDto>> getEligibleAuthors() {
-        List<AuthorDropdownDto> authors = service.getEligibleAuthors();
-        return ResponseEntity.ok(authors);
+
+    private void emitAuditEvent(String eventType,
+                                String targetEntityId,
+                                String targetEntityLabel,
+                                ActorType actorType,
+                                String actorId,
+                                String actorLabel,
+                                Map<String, Object> details,
+                                String outcome) {
+        try {
+            businessAuditService.logEvent(BusinessAuditEvent.builder()
+                    .eventType(eventType)
+                    .module("DATA_CONNECTION")
+                    .targetEntityType("DataConnection")
+                    .targetEntityId(targetEntityId != null ? targetEntityId : "UNKNOWN")
+                    .targetEntityLabel(targetEntityLabel)
+                    .actorType(actorType)
+                    .actorId(actorId)
+                    .actorLabel(actorLabel)
+                    .details(details)
+                    .outcome(outcome)
+                    .build());
+        } catch (Exception e) {
+            loggerHelper.getLogger().warn("Unable to persist business audit event {}: {}", eventType, e.getMessage());
+        }
+    }
+
+    private String resolveUserEmail(Authentication authentication) {
+        if (authentication == null || !(authentication.getPrincipal() instanceof Jwt jwt)) {
+            return "UNKNOWN";
+        }
+        String preferredUsername = jwt.getClaimAsString("preferred_username");
+        if (StringUtils.isNotBlank(preferredUsername)) {
+            return preferredUsername;
+        }
+        String email = jwt.getClaimAsString("email");
+        return StringUtils.isNotBlank(email) ? email : "UNKNOWN";
     }
 }
