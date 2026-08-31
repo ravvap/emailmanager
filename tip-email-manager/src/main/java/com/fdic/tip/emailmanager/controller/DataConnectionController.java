@@ -30,6 +30,44 @@ public class DataConnectionController {
     private final LoggerHelper loggerHelper;
 
     @GetMapping
+    @PreAuthorize(AppConstants.PERM_DATA_CONNECTION_VIEW)
+    public ResponseEntity<List<DataConnectionDto>> getAllConnections(Authentication authentication) {
+        // method body...
+    }
+
+    @PostMapping
+    @PreAuthorize(AppConstants.PERM_DATA_CONNECTION_ADD)
+    public ResponseEntity<DataConnectionDto> createConnection(
+            @Valid @RequestBody DataConnectionDto dto,
+            Authentication authentication) {
+        // method body...
+    }
+
+    @PutMapping("/{id}")
+    @PreAuthorize(AppConstants.PERM_DATA_CONNECTION_EDIT)
+    public ResponseEntity<DataConnectionDto> updateConnection(
+            @PathVariable Long id,
+            @Valid @RequestBody DataConnectionDto dto,
+            Authentication authentication) {
+        // method body...
+    }
+
+    @DeleteMapping("/{id}")
+    @PreAuthorize(AppConstants.PERM_DATA_CONNECTION_DELETE)
+    public ResponseEntity<Void> deleteConnection(
+            @PathVariable Long id,
+            Authentication authentication) {
+        // method body...
+    }
+
+    @PostMapping("/test")
+    @PreAuthorize(AppConstants.PERM_DATA_CONNECTION_TEST)
+    public ResponseEntity<Boolean> testConnection(
+            @Valid @RequestBody TestConnectionRequest request,
+            Authentication authentication) {
+        // method body...
+    }
+    @GetMapping
     public ResponseEntity<List<DataConnectionDto>> getAllConnections(Authentication authentication) {
         String actorEmail = resolveUserEmail(authentication);
 

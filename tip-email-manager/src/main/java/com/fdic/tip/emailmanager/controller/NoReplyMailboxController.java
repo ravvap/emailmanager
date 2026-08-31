@@ -30,7 +30,25 @@ public class NoReplyMailboxController {
     private final NoReplyMailboxService mailboxService;
     private final BusinessAuditService businessAuditService;
     private final LoggerHelper loggerHelper;
+    @GetMapping
+    @PreAuthorize(AppConstants.PERM_NOREPLY_VIEW)
+    public ResponseEntity<NoReplyMailboxDto> getMailbox(Authentication authentication) {
+        // method body...
+    }
 
+    @PostMapping
+    @PreAuthorize(AppConstants.PERM_NOREPLY_SAVE_OR_UPDATE)
+    public ResponseEntity<NoReplyMailboxDto> saveOrUpdateMailbox(
+            @Valid @RequestBody NoReplyMailboxDto dto,
+            Authentication authentication) {
+        // method body...
+    }
+
+    @DeleteMapping
+    @PreAuthorize(AppConstants.PERM_NOREPLY_DELETE)
+    public ResponseEntity<Void> deleteMailbox(Authentication authentication) {
+        // method body...
+    }
     @GetMapping
     public ResponseEntity<NoReplyMailboxDto> getMailbox(Authentication authentication) {
         String actorEmail = resolveUserEmail(authentication);

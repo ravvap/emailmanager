@@ -33,4 +33,25 @@ public final class AppConstants {
     public static final String ACTION_DELETE = "DELETE";
     public static final String ACTION_STATUS_CHANGE = "STATUS_CHANGE";
 	public static final Long ERR_LOCATION_NOT_FOUND = null;
+	
+	
+	// Data Connection Permissions
+    public static final String PERM_DATA_CONNECTION_ADD = "hasAuthority('EM_DATA_CONNECTION_ADD')";
+    public static final String PERM_DATA_CONNECTION_EDIT = "hasAuthority('EM_DATA_CONNECTION_EDIT')";
+    public static final String PERM_DATA_CONNECTION_DELETE = "hasAuthority('EM_DATA_CONNECTION_DELETE')";
+    public static final String PERM_DATA_CONNECTION_VIEW = "hasAuthority('EM_DATA_CONNECTION_VIEW')";
+    public static final String PERM_DATA_CONNECTION_TEST = "hasAuthority('EM_DATA_CONNECTION_TEST')";
+
+    // No-Reply Mailbox Permissions
+    public static final String PERM_NOREPLY_ADD = "hasAuthority('EM_NOREPLY_ADD')";
+    public static final String PERM_NOREPLY_EDIT = "hasAuthority('EM_NOREPLY_EDIT')";
+    public static final String PERM_NOREPLY_VIEW = "hasAuthority('EM_NOREPLY_VIEW')";
+    public static final String PERM_NOREPLY_DELETE = "hasAuthority('EM_NOREPLY_DELETE')";
+    public static final String PERM_NOREPLY_SAVE_OR_UPDATE = "hasAnyAuthority('EM_NOREPLY_ADD', 'EM_NOREPLY_EDIT')";
+
+    // Internal Domain Allowlist Permissions
+    public static final String PERM_DOMAIN_ADD = "hasAuthority('EM_DOMAIN_ADD')";
+    public static final String PERM_DOMAIN_EDIT = "hasAuthority('EM_DOMAIN_EDIT')";
+    public static final String PERM_DOMAIN_DELETE = "hasAuthority('EM_DOMAIN_DELETE')";
+    public static final String PERM_DOMAIN_VIEW = "hasAuthority('EM_DOMAIN_VIEW')";
 }

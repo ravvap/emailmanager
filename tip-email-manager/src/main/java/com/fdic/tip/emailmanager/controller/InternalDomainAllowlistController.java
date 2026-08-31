@@ -29,6 +29,36 @@ public class InternalDomainController {
     private final LoggerHelper loggerHelper;
 
     @GetMapping
+    @PreAuthorize(AppConstants.PERM_DOMAIN_VIEW)
+    public ResponseEntity<List<InternalDomainDto>> getAllDomains(Authentication authentication) {
+        // method body...
+    }
+
+    @PostMapping
+    @PreAuthorize(AppConstants.PERM_DOMAIN_ADD)
+    public ResponseEntity<InternalDomainDto> createDomain(
+            @Valid @RequestBody InternalDomainDto dto,
+            Authentication authentication) {
+        // method body...
+    }
+
+    @PutMapping("/{id}")
+    @PreAuthorize(AppConstants.PERM_DOMAIN_EDIT)
+    public ResponseEntity<InternalDomainDto> updateDomain(
+            @PathVariable Long id,
+            @Valid @RequestBody InternalDomainDto dto,
+            Authentication authentication) {
+        // method body...
+    }
+
+    @DeleteMapping("/{id}")
+    @PreAuthorize(AppConstants.PERM_DOMAIN_DELETE)
+    public ResponseEntity<Void> deleteDomain(
+            @PathVariable Long id,
+            Authentication authentication) {
+        // method body...
+    }
+    @GetMapping
     public ResponseEntity<List<InternalDomainDto>> getAllDomains(Authentication authentication) {
         String actorEmail = resolveUserEmail(authentication);
 
