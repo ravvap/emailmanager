@@ -54,4 +54,26 @@ public final class AppConstants {
     public static final String PERM_DOMAIN_EDIT = "hasAuthority('EM_DOMAIN_EDIT')";
     public static final String PERM_DOMAIN_DELETE = "hasAuthority('EM_DOMAIN_DELETE')";
     public static final String PERM_DOMAIN_VIEW = "hasAuthority('EM_DOMAIN_VIEW')";
+    
+    
+ // Roles permitted: Sr. Analyst, Manager, System Admin
+    public static final String PERM_CONTACT_VIEW   = "hasAnyAuthority('EM_CONTACT_VIEW', 'ROLE_SR_ANALYST', 'ROLE_MANAGER', 'ROLE_SYSTEM_ADMIN')";
+    public static final String PERM_CONTACT_ADD    = "hasAnyAuthority('EM_CONTACT_ADD', 'ROLE_SR_ANALYST', 'ROLE_MANAGER', 'ROLE_SYSTEM_ADMIN')";
+    public static final String PERM_CONTACT_EDIT   = "hasAnyAuthority('EM_CONTACT_EDIT', 'ROLE_SR_ANALYST', 'ROLE_MANAGER', 'ROLE_SYSTEM_ADMIN')";
+    public static final String PERM_CONTACT_DELETE = "hasAnyAuthority('EM_CONTACT_DELETE', 'ROLE_SR_ANALYST', 'ROLE_MANAGER', 'ROLE_SYSTEM_ADMIN')";
+    
+ // Contact Attribute Registry Permissions
+    public static final String PERM_CONTACT_ATTRIBUTE_VIEW   = "hasAuthority('EM_CONTACT_ATTRIBUTE_VIEW')";
+    public static final String PERM_CONTACT_ATTRIBUTE_ADD    = "hasAuthority('EM_CONTACT_ATTRIBUTE_ADD')";
+    public static final String PERM_CONTACT_ATTRIBUTE_EDIT   = "hasAuthority('EM_CONTACT_ATTRIBUTE_EDIT')";
+    public static final String PERM_CONTACT_ATTRIBUTE_DELETE = "hasAuthority('EM_CONTACT_ATTRIBUTE_DELETE')";
+    
+    
+ // Approved Sender Permissions mapped explicitly per action
+    public static final String PERM_APPROVED_SENDER_VIEW   = "hasAuthority('EM_APPROVED_SENDER_VIEW')";
+    public static final String PERM_APPROVED_SENDER_ADD    = "hasAuthority('EM_APPROVED_SENDER_ADD')";
+    public static final String PERM_APPROVED_SENDER_EDIT   = "hasAuthority('EM_APPROVED_SENDER_EDIT')";
+    public static final String PERM_APPROVED_SENDER_DELETE = "hasAuthority('EM_APPROVED_SENDER_DELETE')";
+    
+    
 }

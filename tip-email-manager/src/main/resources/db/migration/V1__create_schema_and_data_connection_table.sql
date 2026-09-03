@@ -68,3 +68,70 @@ CREATE TABLE internal_domain_allowlist (
 CREATE UNIQUE INDEX idx_internal_domain_allowlist_domain_unique 
     ON internal_domain_allowlist (domain) 
     WHERE deleted_at IS NULL;
+    
+    
+CREATE TABLE approved_sender (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    display_name VARCHAR(255) NOT NULL,
+    mailbox_address VARCHAR(255) NOT NULL UNIQUE,
+    status VARCHAR(20) NOT NULL CHECK (status IN ('ACTIVE', 'INACTIVE')),
+    created_by VARCHAR(100) NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    updated_by VARCHAR(100),
+    updated_at TIMESTAMP WITH TIME ZONE,
+    deleted_by VARCHAR(100),
+    deleted_at TIMESTAMP WITH TIME ZONE
+);    
+
+-- Main attribute metadata table
+CREATE TABLE contact_attribute (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    name VARCHAR(255) NOT NULL UNIQUE, -- Editable name, unique across system
+    type VARCHAR(20) NOT NULL CHECK (type IN ('Text', 'Number', 'Date', 'Fixed List')), -- Type is immutable after creation
+    default_value VARCHAR(500), -- Optional single default for Text/Number/Date types
+    status VARCHAR(20) NOT NULL DEFAULT 'Active' CHECK (status IN ('Active', 'Inactive')),
+    created_by VARCHAR(100) NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    updated_by VARCHAR(100),
+    updated_at TIMESTAMP WITH TIME ZONE,
+    deleted_by VARCHAR(100),
+    deleted_at TIMESTAMP WITH TIME ZONE
+);
+
+-- Table for allowed option values when type = 'Fixed List'
+CREATE TABLE contact_attribute_option (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    attribute_id BIGINT NOT NULL REFERENCES contact_attribute(id),
+    option_value VARCHAR(255) NOT NULL,
+    created_by VARCHAR(100) NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    CONSTRAINT uq_attribute_option UNIQUE(attribute_id, option_value)
+);
+-- Table storing main contact entity
+CREATE TABLE contact (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    email VARCHAR(255) NOT NULL,
+    organization VARCHAR(255) NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'Active' CHECK (status IN ('Active', 'Inactive')),
+    created_by VARCHAR(100) NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    updated_by VARCHAR(100),
+    updated_at TIMESTAMP WITH TIME ZONE,
+    deleted_by VARCHAR(100),
+    deleted_at TIMESTAMP WITH TIME ZONE
+);
+
+-- Partial unique index ensuring active contacts have unique emails
+CREATE UNIQUE INDEX uq_contact_active_email ON contact (LOWER(email)) WHERE status = 'Active' AND deleted_at IS NULL;
+
+-- Dynamic metadata attributes associated with contacts (EM-5 integration)
+CREATE TABLE contact_attribute_value (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    contact_id BIGINT NOT NULL REFERENCES contact(id) ON DELETE CASCADE,
+    attribute_id BIGINT NOT NULL REFERENCES contact_attribute(id),
+    attribute_value VARCHAR(500) NOT NULL,
+    created_by VARCHAR(100) NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    CONSTRAINT uq_contact_attribute UNIQUE (contact_id, attribute_id)
+);
