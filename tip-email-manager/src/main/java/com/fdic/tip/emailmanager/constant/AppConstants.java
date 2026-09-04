@@ -74,6 +74,10 @@ public final class AppConstants {
     public static final String PERM_APPROVED_SENDER_ADD    = "hasAuthority('EM_APPROVED_SENDER_ADD')";
     public static final String PERM_APPROVED_SENDER_EDIT   = "hasAuthority('EM_APPROVED_SENDER_EDIT')";
     public static final String PERM_APPROVED_SENDER_DELETE = "hasAuthority('EM_APPROVED_SENDER_DELETE')";
-    
+ // Roles permitted: Sr. Analyst, Manager, System Admin
+    public static final String PERM_DISTRIBUTION_LIST_VIEW   = "hasAnyAuthority('EM_DL_VIEW', 'ROLE_SR_ANALYST', 'ROLE_MANAGER', 'ROLE_SYSTEM_ADMIN')";
+    public static final String PERM_DISTRIBUTION_LIST_ADD    = "hasAnyAuthority('EM_DL_ADD', 'ROLE_SR_ANALYST', 'ROLE_MANAGER', 'ROLE_SYSTEM_ADMIN')";
+    public static final String PERM_DISTRIBUTION_LIST_EDIT   = "hasAnyAuthority('EM_DL_EDIT', 'ROLE_SR_ANALYST', 'ROLE_MANAGER', 'ROLE_SYSTEM_ADMIN')";
+    public static final String PERM_DISTRIBUTION_LIST_DELETE = "hasAnyAuthority('EM_DL_DELETE', 'ROLE_SR_ANALYST', 'ROLE_MANAGER', 'ROLE_SYSTEM_ADMIN')";   
     
 }

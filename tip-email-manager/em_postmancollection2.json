@@ -1,0 +1,372 @@
+{
+	"info": {
+		"_postman_id": "a8f3e2b1-912c-4d8e-b521-123456789abc",
+		"name": "Email Manager API Collection",
+		"description": "Postman Collection for EM-6 (Manage Email Contacts) and EM-7 (Manage Distribution Lists)",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "http://localhost:8080/api/v1",
+			"type": "string"
+		},
+		{
+			"key": "bearerToken",
+			"value": "YOUR_JWT_TOKEN_HERE",
+			"type": "string"
+		}
+	],
+	"auth": {
+		"type": "bearer",
+		"bearer": [
+			{
+				"key": "token",
+				"value": "{{bearerToken}}",
+				"type": "string"
+			}
+		]
+	},
+	"item": [
+		{
+			"name": "Contacts Management (EM-6)",
+			"item": [
+				{
+					"name": "Get All Contacts",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/contacts",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"contacts"
+							]
+						},
+						"description": "Retrieves a list of all active non-deleted contacts."
+					},
+					"response": []
+				},
+				{
+					"name": "Search Contacts by Attribute",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/contacts/search?attributeId=1&value=Region 1",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"contacts",
+								"search"
+							],
+							"query": [
+								{
+									"key": "attributeId",
+									"value": "1",
+									"description": "ID of the dynamic contact attribute"
+								},
+								{
+									"key": "value",
+									"value": "Region 1",
+									"description": "Value to match against attribute values"
+								}
+							]
+						},
+						"description": "Filter contacts based on dynamic metadata attribute values (EM-5 integration)."
+					},
+					"response": []
+				},
+				{
+					"name": "Create Contact",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"John Doe\",\n  \"email\": \"john.doe@fdic.gov\",\n  \"organization\": \"Division of Risk Management\",\n  \"status\": \"Active\",\n  \"attributeValues\": [\n    {\n      \"attributeId\": 1,\n      \"value\": \"Region 1\"\n    }\n  ]\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/contacts",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"contacts"
+							]
+						},
+						"description": "Creates a new contact. Email must be unique among active contacts."
+					},
+					"response": []
+				},
+				{
+					"name": "Update Contact",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"John Doe Updated\",\n  \"email\": \"john.doe@fdic.gov\",\n  \"organization\": \"Division of Resolutions\",\n  \"status\": \"Active\",\n  \"attributeValues\": [\n    {\n      \"attributeId\": 1,\n      \"value\": \"Region 2\"\n    }\n  ]\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/contacts/:id",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"contacts",
+								":id"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "1",
+									"description": "Target Contact ID"
+								}
+							]
+						},
+						"description": "Updates contact info. Validates unique active email excluding current contact ID."
+					},
+					"response": []
+				},
+				{
+					"name": "Delete Contact",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/contacts/:id",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"contacts",
+								":id"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "1",
+									"description": "Target Contact ID"
+								}
+							]
+						},
+						"description": "Performs hard delete if unreferenced, or soft delete (deactivation) if list/send history references exist."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Distribution Lists Management (EM-7)",
+			"item": [
+				{
+					"name": "Get Distribution Lists Grid Summary",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/distribution-lists",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"distribution-lists"
+							]
+						},
+						"description": "Fetches main grid records including formatted member count (e.g., '10 Contacts') and operational flags."
+					},
+					"response": []
+				},
+				{
+					"name": "View Distribution List Details (Modal)",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/distribution-lists/:id?filter=Doe&page=0&size=10",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"distribution-lists",
+								":id"
+							],
+							"query": [
+								{
+									"key": "filter",
+									"value": "Doe",
+									"description": "Filter members by Name or Email"
+								},
+								{
+									"key": "page",
+									"value": "0",
+									"description": "Page number (0-indexed)"
+								},
+								{
+									"key": "size",
+									"value": "10",
+									"description": "Page size"
+								}
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "1",
+									"description": "Distribution List ID"
+								}
+							]
+						},
+						"description": "Gets header details (Name, Status) and paginated list of associated contact members with filter support."
+					},
+					"response": []
+				},
+				{
+					"name": "Get Distribution List Members (Filtered)",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/distribution-lists/:id/members?query=fdic.gov&page=0&size=10",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"distribution-lists",
+								":id",
+								"members"
+							],
+							"query": [
+								{
+									"key": "query",
+									"value": "fdic.gov",
+									"description": "Filter members by Name or Email"
+								},
+								{
+									"key": "page",
+									"value": "0",
+									"description": "Page index"
+								},
+								{
+									"key": "size",
+									"value": "10",
+									"description": "Page size"
+								}
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "1",
+									"description": "Distribution List ID"
+								}
+							]
+						},
+						"description": "Paginated member lookup specific to View/Edit modal grids."
+					},
+					"response": []
+				},
+				{
+					"name": "Create Distribution List",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Q3 Bank Examiners Roster\",\n  \"status\": \"Active\",\n  \"contactIds\": [1, 2, 5, 8]\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/distribution-lists",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"distribution-lists"
+							]
+						},
+						"description": "Creates a new distribution list with initial active contact selections."
+					},
+					"response": []
+				},
+				{
+					"name": "Update Distribution List",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Q3 Bank Examiners Roster - Updated\",\n  \"status\": \"Active\",\n  \"contactIds\": [1, 2, 5]\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/distribution-lists/:id",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"distribution-lists",
+								":id"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "1",
+									"description": "Distribution List ID"
+								}
+							]
+						},
+						"description": "Updates list parameters/members. Blocked if the list is currently involved in an in-flight send."
+					},
+					"response": []
+				},
+				{
+					"name": "Delete Distribution List",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/distribution-lists/:id",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"distribution-lists",
+								":id"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "1",
+									"description": "Distribution List ID"
+								}
+							]
+						},
+						"description": "Deletes distribution list. Hard deletes if unused; soft-deletes (deactivates) if send history exists."
+					},
+					"response": []
+				}
+			]
+		}
+	]
+}

@@ -219,3 +219,33 @@ CREATE INDEX idx_contact_attribute_value_attribute_id
 -- the service layer before insert/update, since there's no clean way
 -- to express "value must match one of this attribute's options" as a
 -- table-level CHECK across two tables without a trigger.
+
+    
+    
+-- Main Distribution List table
+CREATE TABLE distribution_list (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'Active' CHECK (status IN ('Active', 'Inactive')),
+    created_by VARCHAR(100) NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    updated_by VARCHAR(100),
+    updated_at TIMESTAMP WITH TIME ZONE,
+    deleted_by VARCHAR(100),
+    deleted_at TIMESTAMP WITH TIME ZONE
+);
+
+-- Unique index ensuring active distribution list names are unique
+CREATE UNIQUE INDEX uq_distribution_list_active_name 
+ON distribution_list (LOWER(name)) 
+WHERE status = 'Active' AND deleted_at IS NULL;
+
+-- Junction table mapping Distribution Lists to Contacts
+CREATE TABLE distribution_list_member (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    list_id BIGINT NOT NULL REFERENCES distribution_list(id) ON DELETE CASCADE,
+    contact_id BIGINT NOT NULL REFERENCES contact(id) ON DELETE CASCADE,
+    added_by VARCHAR(100) NOT NULL,
+    added_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    CONSTRAINT uq_list_contact UNIQUE (list_id, contact_id)
+);
