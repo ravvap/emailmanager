@@ -26,7 +26,14 @@ public class DistributionListController {
         this.distributionListService = distributionListService;
     }
 
- // GET endpoint for the "View Distribution List" modal
+ // 1. GET details for ALL distribution lists (Main Grid View)
+    @GetMapping
+    @PreAuthorize(AppConstants.PERM_DISTRIBUTION_LIST_VIEW)
+    public ResponseEntity<List<DistributionListSummaryDto>> getAllDistributionLists() {
+        return ResponseEntity.ok(distributionListService.getAllDistributionListsSummary());
+    }
+
+    // 2. GET details for a SPECIFIC distribution list (Modal View + Paginated/Filtered Members)
     @GetMapping("/{id}")
     @PreAuthorize(AppConstants.PERM_DISTRIBUTION_LIST_VIEW)
     public ResponseEntity<DistributionListViewDto> getDistributionListDetails(
@@ -37,25 +44,10 @@ public class DistributionListController {
 
         Pageable pageable = PageRequest.of(page, size);
         DistributionListViewDto viewDto = distributionListService.getDistributionListDetails(id, filter, pageable);
-        
         return ResponseEntity.ok(viewDto);
     }
-    
-    // GET all distribution lists
-    @GetMapping
-    @PreAuthorize(AppConstants.PERM_DISTRIBUTION_LIST_VIEW)
-    public ResponseEntity<List<DistributionListDto>> getAllDistributionLists() {
-        return ResponseEntity.ok(distributionListService.getAllDistributionLists());
-    }
 
-    // GET distribution list details by ID
-    @GetMapping("/{id}")
-    @PreAuthorize(AppConstants.PERM_DISTRIBUTION_LIST_VIEW)
-    public ResponseEntity<DistributionListDto> getDistributionListById(@PathVariable Long id) {
-        return ResponseEntity.ok(distributionListService.getDistributionListById(id));
-    }
-
-    // GET filter distribution list members by Name/Email query with pagination
+    // 3. GET member search / pagination sub-endpoint for a specific distribution list
     @GetMapping("/{id}/members")
     @PreAuthorize(AppConstants.PERM_DISTRIBUTION_LIST_VIEW)
     public ResponseEntity<Page<DistributionListMemberDto>> filterMembers(
@@ -63,9 +55,9 @@ public class DistributionListController {
             @RequestParam(required = false, defaultValue = "") String query,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size) {
+
         return ResponseEntity.ok(distributionListService.filterMembers(id, query, PageRequest.of(page, size)));
     }
-
     // POST create distribution list
     @PostMapping
     @PreAuthorize(AppConstants.PERM_DISTRIBUTION_LIST_ADD)

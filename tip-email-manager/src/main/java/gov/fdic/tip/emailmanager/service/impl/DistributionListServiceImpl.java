@@ -31,37 +31,7 @@ public class DistributionListServiceImpl implements DistributionListService {
         this.auditLogService = auditLogService;
     }
 
-    @Override
-    @Transactional(readOnly = true)
-    public DistributionListViewDto getDistributionListDetails(Long listId, String query, Pageable pageable) {
-        // Fetch distribution list details
-        DistributionList list = distributionListRepository.findByIdAndDeletedAtIsNull(listId)
-                .orElseThrow(() -> new RuntimeException("Distribution List not found with id: " + listId));
-
-        // Fetch paginated and filtered contact members (Filter on Name / Email)
-        Page<DistributionListMemberDto> memberPage = memberRepository
-                .filterMembersByListIdAndQuery(listId, query != null ? query.trim() : "", pageable)
-                .map(dlm -> {
-                    DistributionListMemberDto dto = new DistributionListMemberDto();
-                    dto.setContactId(dlm.getContact().getId());
-                    dto.setName(dlm.getContact().getName());
-                    dto.setEmail(dlm.getContact().getEmail());
-                    dto.setStatus(dlm.getContact().getStatus());
-                    return dto;
-                });
-
-        DistributionListViewDto response = new DistributionListViewDto();
-        response.setId(list.getId());
-        response.setName(list.getName());
-        response.setStatus(list.getStatus());
-        response.setCreatedBy(list.getCreatedBy());
-        response.setCreatedAt(list.getCreatedAt());
-        response.setUpdatedBy(list.getUpdatedBy());
-        response.setUpdatedAt(list.getUpdatedAt());
-        response.setMembers(memberPage);
-
-        return response;
-    }
+ // Details for ALL Distribution Lists (Grid view)
     @Override
     @Transactional(readOnly = true)
     public List<DistributionListSummaryDto> getAllDistributionListsSummary() {
@@ -70,6 +40,43 @@ public class DistributionListServiceImpl implements DistributionListService {
                 .collect(Collectors.toList());
     }
 
+    // Details per SPECIFIC Distribution List (Modal view)
+    @Override
+    @Transactional(readOnly = true)
+    public DistributionListViewDto getDistributionListDetails(Long id, String filter, Pageable pageable) {
+        DistributionList list = distributionListRepository.findByIdAndDeletedAtIsNull(id)
+                .orElseThrow(() -> new RuntimeException("Distribution List not found with id: " + id));
+
+        Page<DistributionListMemberDto> membersPage = filterMembers(id, filter, pageable);
+
+        DistributionListViewDto dto = new DistributionListViewDto();
+        dto.setId(list.getId());
+        dto.setName(list.getName());
+        dto.setStatus(list.getStatus());
+        dto.setCreatedBy(list.getCreatedBy());
+        dto.setCreatedAt(list.getCreatedAt());
+        dto.setUpdatedBy(list.getUpdatedBy());
+        dto.setUpdatedAt(list.getUpdatedAt());
+        dto.setMembers(membersPage);
+
+        return dto;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<DistributionListMemberDto> filterMembers(Long listId, String query, Pageable pageable) {
+        return memberRepository.filterMembersByListIdAndQuery(listId, query != null ? query.trim() : "", pageable)
+                .map(dlm -> {
+                    DistributionListMemberDto dto = new DistributionListMemberDto();
+                    dto.setContactId(dlm.getContact().getId());
+                    dto.setName(dlm.getContact().getName());
+                    dto.setEmail(dlm.getContact().getEmail());
+                    dto.setStatus(dlm.getContact().getStatus());
+                    return dto;
+                });
+    }
+
+    
     @Override
     public DistributionListSummaryDto createDistributionList(CreateDistributionListRequest request, String username) {
         // Validation: Unique active name constraint
@@ -122,8 +129,6 @@ public class DistributionListServiceImpl implements DistributionListService {
         dto.setCreatedAt(list.getCreatedAt());
         dto.setUpdatedBy(list.getUpdatedBy());
         dto.setUpdatedAt(list.getUpdatedAt());
-        
-        // Actions rule evaluation
         dto.setCanEdit(!isInFlight);
         dto.setCanDelete("Inactive".equalsIgnoreCase(list.getStatus()) && !hasHistory && !isInFlight);
 

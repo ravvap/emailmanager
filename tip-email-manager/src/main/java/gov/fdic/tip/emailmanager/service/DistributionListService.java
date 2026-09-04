@@ -20,4 +20,16 @@ public interface DistributionListService {
     DistributionListDto updateDistributionList(Long id, DistributionListDto dto, String username);
 
     void deleteDistributionList(Long id, String username);
-}
+    
+    
+ // 1. Fetch summary list of all distribution lists for main table grid
+    List<DistributionListSummaryDto> getAllDistributionListsSummary();
+
+    // 2. Fetch specific distribution list details + paginated/filtered members for View Modal
+    DistributionListViewDto getDistributionListDetails(Long id, String filter, Pageable pageable);
+
+    // 3. Standalone query for member filtering and pagination
+ 
+    DistributionListSummaryDto createDistributionList(CreateDistributionListRequest request, String username);
+
+ }
