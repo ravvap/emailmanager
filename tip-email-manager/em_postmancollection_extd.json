@@ -1,8 +1,8 @@
 {
 	"info": {
-		"_postman_id": "a8f3e2b1-912c-4d8e-b521-123456789abc",
-		"name": "Email Manager API Collection",
-		"description": "Postman Collection for EM-6 (Manage Email Contacts) and EM-7 (Manage Distribution Lists)",
+		"_postman_id": "c9f4e3a2-023d-5e9f-c632-987654321xyz",
+		"name": "Email Manager Full API Collection",
+		"description": "Postman Collection covering Approved Senders, Contact Attributes (EM-5), Contacts (EM-6), and Distribution Lists (EM-7)",
 		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
 	},
 	"variable": [
@@ -28,6 +28,281 @@
 		]
 	},
 	"item": [
+		{
+			"name": "Approved Senders",
+			"item": [
+				{
+					"name": "Get All Approved Senders",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/approved-senders",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"approved-senders"
+							]
+						},
+						"description": "Retrieves all registered approved sender email addresses."
+					},
+					"response": []
+				},
+				{
+					"name": "Get Approved Sender by ID",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/approved-senders/:id",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"approved-senders",
+								":id"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "1",
+									"description": "Approved Sender ID"
+								}
+							]
+						},
+						"description": "Fetches specific approved sender details by ID."
+					},
+					"response": []
+				},
+				{
+					"name": "Create Approved Sender",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"notifications@fdic.gov\",\n  \"displayName\": \"FDIC Official Notifications\",\n  \"status\": \"Active\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/approved-senders",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"approved-senders"
+							]
+						},
+						"description": "Adds a new approved sender address."
+					},
+					"response": []
+				},
+				{
+					"name": "Update Approved Sender",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"notifications@fdic.gov\",\n  \"displayName\": \"FDIC Official Alerts & Notifications\",\n  \"status\": \"Active\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/approved-senders/:id",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"approved-senders",
+								":id"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "1",
+									"description": "Approved Sender ID"
+								}
+							]
+						},
+						"description": "Updates approved sender display name or status."
+					},
+					"response": []
+				},
+				{
+					"name": "Delete Approved Sender",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/approved-senders/:id",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"approved-senders",
+								":id"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "1",
+									"description": "Approved Sender ID"
+								}
+							]
+						},
+						"description": "Deletes or deactivates an approved sender address."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Contact Attributes (EM-5)",
+			"item": [
+				{
+					"name": "Get All Contact Attributes",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/contact-attributes",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"contact-attributes"
+							]
+						},
+						"description": "Retrieves all dynamic contact attribute definitions (e.g., Fixed List, Date, Text types)."
+					},
+					"response": []
+				},
+				{
+					"name": "Get Contact Attribute Options",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/contact-attributes/:id/options",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"contact-attributes",
+								":id",
+								"options"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "1",
+									"description": "Attribute ID (Fixed List type)"
+								}
+							]
+						},
+						"description": "Fetches predefined dropdown option values for a Fixed List attribute."
+					},
+					"response": []
+				},
+				{
+					"name": "Create Contact Attribute",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"FDIC Region\",\n  \"type\": \"Fixed List\",\n  \"status\": \"Active\",\n  \"options\": [\n    {\"optionValue\": \"Region 1 - New York\"},\n    {\"optionValue\": \"Region 2 - Atlanta\"},\n    {\"optionValue\": \"Region 3 - Chicago\"}\n  ]\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/contact-attributes",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"contact-attributes"
+							]
+						},
+						"description": "Defines a new dynamic attribute for contact categorization."
+					},
+					"response": []
+				},
+				{
+					"name": "Update Contact Attribute",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"FDIC Regional Division\",\n  \"type\": \"Fixed List\",\n  \"status\": \"Active\",\n  \"options\": [\n    {\"optionValue\": \"Region 1 - New York\"},\n    {\"optionValue\": \"Region 2 - Atlanta\"},\n    {\"optionValue\": \"Region 3 - Chicago\"},\n    {\"optionValue\": \"Region 4 - Dallas\"}\n  ]\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/contact-attributes/:id",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"contact-attributes",
+								":id"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "1",
+									"description": "Attribute ID"
+								}
+							]
+						},
+						"description": "Updates attribute configuration or adds additional predefined options."
+					},
+					"response": []
+				},
+				{
+					"name": "Delete Contact Attribute",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/contact-attributes/:id",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"contact-attributes",
+								":id"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "1",
+									"description": "Attribute ID"
+								}
+							]
+						},
+						"description": "Deletes or deactivates a dynamic contact attribute definition."
+					},
+					"response": []
+				}
+			]
+		},
 		{
 			"name": "Contacts Management (EM-6)",
 			"item": [
@@ -55,7 +330,7 @@
 						"method": "GET",
 						"header": [],
 						"url": {
-							"raw": "{{baseUrl}}/contacts/search?attributeId=1&value=Region 1",
+							"raw": "{{baseUrl}}/contacts/search?attributeId=1&value=Region 1 - New York",
 							"host": [
 								"{{baseUrl}}"
 							],
@@ -71,7 +346,7 @@
 								},
 								{
 									"key": "value",
-									"value": "Region 1",
+									"value": "Region 1 - New York",
 									"description": "Value to match against attribute values"
 								}
 							]
@@ -92,7 +367,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n  \"name\": \"John Doe\",\n  \"email\": \"john.doe@fdic.gov\",\n  \"organization\": \"Division of Risk Management\",\n  \"status\": \"Active\",\n  \"attributeValues\": [\n    {\n      \"attributeId\": 1,\n      \"value\": \"Region 1\"\n    }\n  ]\n}"
+							"raw": "{\n  \"name\": \"John Doe\",\n  \"email\": \"john.doe@fdic.gov\",\n  \"organization\": \"Division of Risk Management\",\n  \"status\": \"Active\",\n  \"attributeValues\": [\n    {\n      \"attributeId\": 1,\n      \"value\": \"Region 1 - New York\"\n    }\n  ]\n}"
 						},
 						"url": {
 							"raw": "{{baseUrl}}/contacts",
@@ -119,7 +394,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n  \"name\": \"John Doe Updated\",\n  \"email\": \"john.doe@fdic.gov\",\n  \"organization\": \"Division of Resolutions\",\n  \"status\": \"Active\",\n  \"attributeValues\": [\n    {\n      \"attributeId\": 1,\n      \"value\": \"Region 2\"\n    }\n  ]\n}"
+							"raw": "{\n  \"name\": \"John Doe Updated\",\n  \"email\": \"john.doe@fdic.gov\",\n  \"organization\": \"Division of Resolutions\",\n  \"status\": \"Active\",\n  \"attributeValues\": [\n    {\n      \"attributeId\": 1,\n      \"value\": \"Region 2 - Atlanta\"\n    }\n  ]\n}"
 						},
 						"url": {
 							"raw": "{{baseUrl}}/contacts/:id",
