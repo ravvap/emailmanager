@@ -1,78 +1,126 @@
 package gov.fdic.tip.emailmanager.controller;
 
-import java.util.List;
-
+import gov.fdic.tip.emailmanager.constant.AppConstants;
+import gov.fdic.tip.emailmanager.constant.ActorType;
+import gov.fdic.tip.emailmanager.dto.ContactAttributeDto;
+import gov.fdic.tip.emailmanager.service.AuditLogService;
+import gov.fdic.tip.emailmanager.service.ContactAttributeService;
+import jakarta.validation.Valid;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
-import org.springframework.web.bind.annotation.DeleteMapping;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.PutMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
-import com.fdic.tip.emailmanager.constant.AppConstants;
+import java.util.List;
+import java.util.Map;
 
-import gov.fdic.tip.emailmanager.dto.ContactAttributeDto;
-import gov.fdic.tip.emailmanager.service.ContactAttributeService;
-import jakarta.validation.Valid;
-
+@Slf4j
 @RestController
 @RequestMapping("/api/v1/contact-attributes")
 public class ContactAttributeController {
 
-    private final ContactAttributeService service;
+    private final ContactAttributeService contactAttributeService;
+    private final AuditLogService auditLogService;
 
-    public ContactAttributeController(ContactAttributeService service) {
-        this.service = service;
+    public ContactAttributeController(ContactAttributeService contactAttributeService, AuditLogService auditLogService) {
+        this.contactAttributeService = contactAttributeService;
+        this.auditLogService = auditLogService;
     }
 
-    // GET all attributes -> VIEW permission
     @GetMapping
-    @PreAuthorize(AppConstants.PERM_CONTACT_ATTRIBUTE_VIEW)
-    public ResponseEntity<List<ContactAttributeDto>> getAllAttributes() {
-        return ResponseEntity.ok(service.getAllAttributes());
+    @PreAuthorize(AppConstants.PERM_CONTACT_ATTR_VIEW)
+    public ResponseEntity<List<ContactAttributeDto>> getAllContactAttributes(Authentication authentication) {
+        String actorEmail = authentication.getName();
+        log.info("Fetching all contact attributes by user: {}", actorEmail);
+
+        List<ContactAttributeDto> attributes = contactAttributeService.getAllContactAttributes();
+
+        auditLogService.emitAuditEvent(
+                "CONTACT_ATTRIBUTE_READ_ALL",
+                "ALL",
+                "Contact Attributes List",
+                ActorType.USER,
+                actorEmail,
+                actorEmail,
+                Map.of("count", attributes.size()),
+                "SUCCESS"
+        );
+
+        return ResponseEntity.ok(attributes);
     }
 
-    // GET active attributes -> VIEW permission
-    @GetMapping("/active")
-    @PreAuthorize(AppConstants.PERM_CONTACT_ATTRIBUTE_VIEW)
-    public ResponseEntity<List<ContactAttributeDto>> getActiveAttributes() {
-        return ResponseEntity.ok(service.getActiveAttributes());
-    }
-
-    // POST create attribute -> ADD permission
     @PostMapping
-    @PreAuthorize(AppConstants.PERM_CONTACT_ATTRIBUTE_ADD)
-    public ResponseEntity<ContactAttributeDto> createAttribute(
+    @PreAuthorize(AppConstants.PERM_CONTACT_ATTR_ADD)
+    public ResponseEntity<ContactAttributeDto> createContactAttribute(
             @Valid @RequestBody ContactAttributeDto dto,
             Authentication authentication) {
-        ContactAttributeDto created = service.createAttribute(dto, authentication.getName());
+        String actorEmail = authentication.getName();
+        log.info("Creating contact attribute: {} by user: {}", dto.getName(), actorEmail);
+
+        ContactAttributeDto created = contactAttributeService.createContactAttribute(dto, actorEmail);
+
+        auditLogService.emitAuditEvent(
+                "CONTACT_ATTRIBUTE_CREATE",
+                String.valueOf(created.getId()),
+                created.getName(),
+                ActorType.USER,
+                actorEmail,
+                actorEmail,
+                Map.of("attributeName", created.getName()),
+                "SUCCESS"
+        );
+
         return ResponseEntity.status(HttpStatus.CREATED).body(created);
     }
 
-    // PUT update attribute -> EDIT permission
     @PutMapping("/{id}")
-    @PreAuthorize(AppConstants.PERM_CONTACT_ATTRIBUTE_EDIT)
-    public ResponseEntity<ContactAttributeDto> updateAttribute(
+    @PreAuthorize(AppConstants.PERM_CONTACT_ATTR_EDIT)
+    public ResponseEntity<ContactAttributeDto> updateContactAttribute(
             @PathVariable Long id,
             @Valid @RequestBody ContactAttributeDto dto,
             Authentication authentication) {
-        ContactAttributeDto updated = service.updateAttribute(id, dto, authentication.getName());
+        String actorEmail = authentication.getName();
+        log.info("Updating contact attribute ID: {} by user: {}", id, actorEmail);
+
+        ContactAttributeDto updated = contactAttributeService.updateContactAttribute(id, dto, actorEmail);
+
+        auditLogService.emitAuditEvent(
+                "CONTACT_ATTRIBUTE_UPDATE",
+                String.valueOf(id),
+                updated.getName(),
+                ActorType.USER,
+                actorEmail,
+                actorEmail,
+                Map.of("attributeName", updated.getName()),
+                "SUCCESS"
+        );
+
         return ResponseEntity.ok(updated);
     }
 
-    // DELETE attribute -> DELETE permission
     @DeleteMapping("/{id}")
-    @PreAuthorize(AppConstants.PERM_CONTACT_ATTRIBUTE_DELETE)
-    public ResponseEntity<Void> deleteAttribute(
+    @PreAuthorize(AppConstants.PERM_CONTACT_ATTR_DELETE)
+    public ResponseEntity<Void> deleteContactAttribute(
             @PathVariable Long id,
             Authentication authentication) {
-        service.deleteAttribute(id, authentication.getName());
+        String actorEmail = authentication.getName();
+        log.info("Deleting contact attribute ID: {} by user: {}", id, actorEmail);
+
+        contactAttributeService.deleteContactAttribute(id, actorEmail);
+
+        auditLogService.emitAuditEvent(
+                "CONTACT_ATTRIBUTE_DELETE",
+                String.valueOf(id),
+                "Contact Attribute " + id,
+                ActorType.USER,
+                actorEmail,
+                actorEmail,
+                Map.of("attributeId", id),
+                "SUCCESS"
+        );
+
         return ResponseEntity.noContent().build();
     }
 }

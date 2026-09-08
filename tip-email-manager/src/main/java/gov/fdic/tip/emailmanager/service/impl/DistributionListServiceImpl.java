@@ -1,9 +1,7 @@
 package gov.fdic.tip.emailmanager.service.impl;
 
-import gov.fdic.tip.emailmanager.dto.CreateDistributionListRequest;
-import gov.fdic.tip.emailmanager.dto.DistributionListSummaryDto;
-import gov.fdic.tip.emailmanager.dto.DistributionListViewDto;
-import gov.fdic.tip.emailmanager.dto.DistributionListMemberDto;
+import gov.fdic.tip.emailmanager.constant.ActorType;
+import gov.fdic.tip.emailmanager.dto.*;
 import gov.fdic.tip.emailmanager.entity.Contact;
 import gov.fdic.tip.emailmanager.entity.DistributionList;
 import gov.fdic.tip.emailmanager.entity.DistributionListMember;
@@ -12,6 +10,7 @@ import gov.fdic.tip.emailmanager.repository.DistributionListMemberRepository;
 import gov.fdic.tip.emailmanager.repository.DistributionListRepository;
 import gov.fdic.tip.emailmanager.service.AuditLogService;
 import gov.fdic.tip.emailmanager.service.DistributionListService;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -19,8 +18,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 @Transactional
 public class DistributionListServiceImpl implements DistributionListService {
@@ -41,35 +42,99 @@ public class DistributionListServiceImpl implements DistributionListService {
     }
 
     @Override
-    public DistributionListSummaryDto updateDistributionList(Long id, CreateDistributionListRequest request, String username) {
-        // Fetch existing list
+    public DistributionListSummaryDto createDistributionList(CreateDistributionListRequest request, String actorEmail) {
+        log.debug("Executing createDistributionList for name: {}", request.getName());
+
+        if ("Active".equalsIgnoreCase(request.getStatus()) && distributionListRepository.existsActiveName(request.getName().trim())) {
+            log.error("Failed to create distribution list. Duplicate active name: {}", request.getName());
+
+            auditLogService.emitAuditEvent(
+                    "DISTRIBUTION_LIST_CREATE_FAILED",
+                    "N/A",
+                    request.getName(),
+                    ActorType.USER,
+                    actorEmail,
+                    actorEmail,
+                    Map.of("reason", "Duplicate active distribution list name"),
+                    "FAILURE"
+            );
+            throw new IllegalArgumentException("A distribution list with the name '" + request.getName() + "' already exists.");
+        }
+
+        DistributionList list = new DistributionList();
+        list.setName(request.getName().trim());
+        list.setStatus(request.getStatus());
+        list.setCreatedBy(actorEmail);
+
+        for (Long contactId : request.getContactIds()) {
+            Contact contact = contactRepository.findByIdAndDeletedAtIsNull(contactId)
+                    .orElseThrow(() -> new IllegalArgumentException("Contact not found with ID: " + contactId));
+
+            if (!"Active".equalsIgnoreCase(contact.getStatus())) {
+                throw new IllegalArgumentException("Contact (" + contact.getEmail() + ") is inactive and cannot be added.");
+            }
+
+            DistributionListMember member = new DistributionListMember();
+            member.setDistributionList(list);
+            member.setContact(contact);
+            member.setAddedBy(actorEmail);
+            list.getMembers().add(member);
+        }
+
+        DistributionList savedList = distributionListRepository.save(list);
+
+        auditLogService.emitAuditEvent(
+                "DISTRIBUTION_LIST_SERVICE_CREATE",
+                String.valueOf(savedList.getId()),
+                savedList.getName(),
+                ActorType.USER,
+                actorEmail,
+                actorEmail,
+                Map.of("memberCount", savedList.getMembers().size()),
+                "SUCCESS"
+        );
+
+        return convertToSummaryDto(savedList);
+    }
+
+    @Override
+    public DistributionListSummaryDto updateDistributionList(Long id, CreateDistributionListRequest request, String actorEmail) {
+        log.debug("Executing updateDistributionList for ID: {}", id);
+
         DistributionList list = distributionListRepository.findByIdAndDeletedAtIsNull(id)
                 .orElseThrow(() -> new IllegalArgumentException("Distribution List not found with id: " + id));
 
-        // Rule: Edit not allowed on a list with an in-flight send
         if (distributionListRepository.isInFlightSend(id)) {
+            log.warn("Blocked update attempt on list ID: {} due to in-flight send process.", id);
+
+            auditLogService.emitAuditEvent(
+                    "DISTRIBUTION_LIST_UPDATE_BLOCKED",
+                    String.valueOf(id),
+                    list.getName(),
+                    ActorType.USER,
+                    actorEmail,
+                    actorEmail,
+                    Map.of("reason", "In-flight send process active"),
+                    "FAILURE"
+            );
             throw new IllegalStateException("Edit not allowed on a distribution list with an in-flight send.");
         }
 
-        // Validation: Name uniqueness check for Active lists (excluding current list ID)
         if ("Active".equalsIgnoreCase(request.getStatus()) &&
             distributionListRepository.existsActiveNameExcludingId(request.getName().trim(), id)) {
             throw new IllegalArgumentException("A distribution list with the name '" + request.getName() + "' already exists.");
         }
 
-        // Update list properties
         list.setName(request.getName().trim());
         list.setStatus(request.getStatus());
-        list.setUpdatedBy(username);
+        list.setUpdatedBy(actorEmail);
 
-        // Replace contact members roster
         list.getMembers().clear();
         if (request.getContactIds() != null && !request.getContactIds().isEmpty()) {
             for (Long contactId : request.getContactIds()) {
                 Contact contact = contactRepository.findByIdAndDeletedAtIsNull(contactId)
                         .orElseThrow(() -> new IllegalArgumentException("Contact not found with ID: " + contactId));
 
-                // Rule: Only active contacts can be associated
                 if (!"Active".equalsIgnoreCase(contact.getStatus())) {
                     throw new IllegalArgumentException("Contact (" + contact.getEmail() + ") is inactive and cannot be added.");
                 }
@@ -77,46 +142,83 @@ public class DistributionListServiceImpl implements DistributionListService {
                 DistributionListMember member = new DistributionListMember();
                 member.setDistributionList(list);
                 member.setContact(contact);
-                member.setAddedBy(username);
+                member.setAddedBy(actorEmail);
                 list.getMembers().add(member);
             }
         }
 
         DistributionList updatedList = distributionListRepository.save(list);
 
-        auditLogService.logAction("DISTRIBUTION_LIST", updatedList.getId(), "UPDATE", username,
-                "Updated distribution list '" + updatedList.getName() + "' with " + updatedList.getMembers().size() + " member(s).");
+        auditLogService.emitAuditEvent(
+                "DISTRIBUTION_LIST_SERVICE_UPDATE",
+                String.valueOf(updatedList.getId()),
+                updatedList.getName(),
+                ActorType.USER,
+                actorEmail,
+                actorEmail,
+                Map.of("memberCount", updatedList.getMembers().size()),
+                "SUCCESS"
+        );
 
         return convertToSummaryDto(updatedList);
     }
 
     @Override
-    public void deleteDistributionList(Long id, String username) {
+    public void deleteDistributionList(Long id, String actorEmail) {
+        log.debug("Executing deleteDistributionList for ID: {}", id);
+
         DistributionList list = distributionListRepository.findByIdAndDeletedAtIsNull(id)
                 .orElseThrow(() -> new IllegalArgumentException("Distribution List not found with id: " + id));
 
-        // Rule: Deletion not allowed on a list with an in-flight send
         if (distributionListRepository.isInFlightSend(id)) {
+            log.warn("Blocked delete attempt on list ID: {} due to in-flight send process.", id);
+
+            auditLogService.emitAuditEvent(
+                    "DISTRIBUTION_LIST_DELETE_BLOCKED",
+                    String.valueOf(id),
+                    list.getName(),
+                    ActorType.USER,
+                    actorEmail,
+                    actorEmail,
+                    Map.of("reason", "In-flight send process active"),
+                    "FAILURE"
+            );
             throw new IllegalStateException("Deletion not allowed on a distribution list with an in-flight send.");
         }
 
         boolean hasHistory = distributionListRepository.hasSendHistory(id);
 
-        // Rule: Delete allowed on inactive distribution lists that do not have send history
         if (!hasHistory) {
-            // Hard delete from database if never used in email sends
             distributionListRepository.delete(list);
-            auditLogService.logAction("DISTRIBUTION_LIST", id, "HARD_DELETE", username,
-                    "Permanently deleted distribution list: " + list.getName());
+            log.info("[SPLUNK_TRACKING] Permanently deleted distribution list ID: {}", id);
+
+            auditLogService.emitAuditEvent(
+                    "DISTRIBUTION_LIST_HARD_DELETE",
+                    String.valueOf(id),
+                    list.getName(),
+                    ActorType.USER,
+                    actorEmail,
+                    actorEmail,
+                    Map.of("deleteType", "HARD_DELETE"),
+                    "SUCCESS"
+            );
         } else {
-            // Soft delete (deactivate) to preserve historic send logs and audit trail
             list.setStatus("Inactive");
-            list.setDeletedBy(username);
+            list.setDeletedBy(actorEmail);
             list.setDeletedAt(OffsetDateTime.now());
             distributionListRepository.save(list);
+            log.info("[SPLUNK_TRACKING] Soft deleted (deactivated) distribution list ID: {}", id);
 
-            auditLogService.logAction("DISTRIBUTION_LIST", id, "SOFT_DELETE", username,
-                    "Deactivated distribution list due to existing send history: " + list.getName());
+            auditLogService.emitAuditEvent(
+                    "DISTRIBUTION_LIST_SOFT_DELETE",
+                    String.valueOf(id),
+                    list.getName(),
+                    ActorType.USER,
+                    actorEmail,
+                    actorEmail,
+                    Map.of("deleteType", "SOFT_DELETE"),
+                    "SUCCESS"
+            );
         }
     }
 
@@ -161,39 +263,6 @@ public class DistributionListServiceImpl implements DistributionListService {
                     dto.setStatus(dlm.getContact().getStatus());
                     return dto;
                 });
-    }
-
-    @Override
-    public DistributionListSummaryDto createDistributionList(CreateDistributionListRequest request, String username) {
-        if ("Active".equalsIgnoreCase(request.getStatus()) && distributionListRepository.existsActiveName(request.getName().trim())) {
-            throw new IllegalArgumentException("A distribution list with the name '" + request.getName() + "' already exists.");
-        }
-
-        DistributionList list = new DistributionList();
-        list.setName(request.getName().trim());
-        list.setStatus(request.getStatus());
-        list.setCreatedBy(username);
-
-        for (Long contactId : request.getContactIds()) {
-            Contact contact = contactRepository.findByIdAndDeletedAtIsNull(contactId)
-                    .orElseThrow(() -> new IllegalArgumentException("Contact not found with ID: " + contactId));
-
-            if (!"Active".equalsIgnoreCase(contact.getStatus())) {
-                throw new IllegalArgumentException("Contact (" + contact.getEmail() + ") is inactive and cannot be added.");
-            }
-
-            DistributionListMember member = new DistributionListMember();
-            member.setDistributionList(list);
-            member.setContact(contact);
-            member.setAddedBy(username);
-            list.getMembers().add(member);
-        }
-
-        DistributionList savedList = distributionListRepository.save(list);
-        auditLogService.logAction("DISTRIBUTION_LIST", savedList.getId(), "CREATE", username,
-                "Created distribution list '" + savedList.getName() + "' with " + savedList.getMembers().size() + " member(s).");
-
-        return convertToSummaryDto(savedList);
     }
 
     private DistributionListSummaryDto convertToSummaryDto(DistributionList list) {
