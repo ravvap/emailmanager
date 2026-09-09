@@ -1,0 +1,154 @@
+package gov.fdic.tip.emailmanager.controller;
+
+import gov.fdic.tip.emailmanager.constant.ActorType;
+import gov.fdic.tip.emailmanager.dto.ContactDto;
+import gov.fdic.tip.emailmanager.service.AuditLogService;
+import gov.fdic.tip.emailmanager.service.ContactService;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
+
+import java.util.List;
+import java.util.Map;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.*;
+
+@ExtendWith(MockitoExtension.class)
+class ContactControllerTest {
+
+    @Mock
+    private ContactService contactService;
+
+    @Mock
+    private AuditLogService auditLogService;
+
+    @Mock
+    private Authentication authentication;
+
+    @InjectMocks
+    private ContactController contactController;
+
+    private static final String USER_EMAIL = "testuser@fdic.gov";
+
+    @BeforeEach
+    void setUp() {
+        lenient().when(authentication.getName()).thenReturn(USER_EMAIL);
+    }
+
+    @Test
+    void getAllContacts_Success() {
+        ContactDto contact = new ContactDto();
+        contact.setId(1L);
+        contact.setEmail("john.doe@fdic.gov");
+
+        when(contactService.getAllContacts()).thenReturn(List.of(contact));
+
+        ResponseEntity<List<ContactDto>> response = contactController.getAllContacts(authentication);
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertNotNull(response.getBody());
+        assertEquals(1, response.getBody().size());
+
+        verify(auditLogService).emitAuditEvent(
+                eq("CONTACT_READ_ALL"),
+                eq("ALL"),
+                eq("Contacts List"),
+                eq(ActorType.USER),
+                eq(USER_EMAIL),
+                eq(USER_EMAIL),
+                eq(Map.of("count", 1)),
+                eq("SUCCESS")
+        );
+    }
+
+    @Test
+    void createContact_Success() {
+        ContactDto dto = new ContactDto();
+        dto.setEmail("new.contact@fdic.gov");
+
+        ContactDto created = new ContactDto();
+        created.setId(10L);
+        created.setEmail("new.contact@fdic.gov");
+
+        when(contactService.createContact(any(ContactDto.class), eq(USER_EMAIL))).thenReturn(created);
+
+        ResponseEntity<ContactDto> response = contactController.createContact(dto, authentication);
+
+        assertEquals(HttpStatus.CREATED, response.getStatusCode());
+        assertNotNull(response.getBody());
+        assertEquals(10L, response.getBody().getId());
+
+        verify(auditLogService).emitAuditEvent(
+                eq("CONTACT_CREATE"),
+                eq("10"),
+                eq("new.contact@fdic.gov"),
+                eq(ActorType.USER),
+                eq(USER_EMAIL),
+                eq(USER_EMAIL),
+                eq(Map.of("email", "new.contact@fdic.gov")),
+                eq("SUCCESS")
+        );
+    }
+
+    @Test
+    void updateContact_Success() {
+        Long id = 5L;
+        ContactDto dto = new ContactDto();
+        dto.setEmail("updated@fdic.gov");
+
+        ContactDto updated = new ContactDto();
+        updated.setId(id);
+        updated.setEmail("updated@fdic.gov");
+
+        when(contactService.updateContact(eq(id), any(ContactDto.class), eq(USER_EMAIL))).thenReturn(updated);
+
+        ResponseEntity<ContactDto> response = contactController.updateContact(id, dto, authentication);
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals("updated@fdic.gov", response.getBody().getEmail());
+
+        verify(auditLogService).emitAuditEvent(
+                eq("CONTACT_UPDATE"),
+                eq("5"),
+                eq("updated@fdic.gov"),
+                eq(ActorType.USER),
+                eq(USER_EMAIL),
+                eq(USER_EMAIL),
+                eq(Map.of("contactId", 5L, "email", "updated@fdic.gov")),
+                eq("SUCCESS")
+        );
+    }
+
+    @Test
+    void deleteContact_Success() {
+        Long id = 3L;
+
+        doNothing().when(contactService).deleteContact(id, USER_EMAIL);
+
+        ResponseEntity<Void> response = contactController.deleteContact(id, authentication);
+
+        assertEquals(HttpStatus.NO_CONTENT, response.getStatusCode());
+        verify(contactService, times(1)).deleteContact(id, USER_EMAIL);
+
+        verify(auditLogService).emitAuditEvent(
+                eq("CONTACT_DELETE"),
+                eq("3"),
+                eq("Contact 3"),
+                eq(ActorType.USER),
+                eq(USER_EMAIL),
+                eq(USER_EMAIL),
+                eq(Map.of("contactId", 3L)),
+                eq("SUCCESS")
+        );
+    }
+}

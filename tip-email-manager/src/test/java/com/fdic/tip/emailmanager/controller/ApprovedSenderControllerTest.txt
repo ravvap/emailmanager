@@ -1,0 +1,123 @@
+package gov.fdic.tip.emailmanager.controller;
+
+import gov.fdic.tip.emailmanager.constant.ActorType;
+import gov.fdic.tip.emailmanager.dto.ApprovedSenderDto;
+import gov.fdic.tip.emailmanager.service.ApprovedSenderService;
+import gov.fdic.tip.emailmanager.service.AuditLogService;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
+
+import java.util.List;
+import java.util.Map;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.*;
+
+@ExtendWith(MockitoExtension.class)
+class ApprovedSenderControllerTest {
+
+    @Mock
+    private ApprovedSenderService approvedSenderService;
+
+    @Mock
+    private AuditLogService auditLogService;
+
+    @Mock
+    private Authentication authentication;
+
+    @InjectMocks
+    private ApprovedSenderController approvedSenderController;
+
+    private static final String USER_EMAIL = "sender.admin@fdic.gov";
+
+    @BeforeEach
+    void setUp() {
+        lenient().when(authentication.getName()).thenReturn(USER_EMAIL);
+    }
+
+    @Test
+    void getAllApprovedSenders_Success() {
+        ApprovedSenderDto sender = new ApprovedSenderDto();
+        sender.setId(1L);
+        sender.setEmail("noreply@fdic.gov");
+
+        when(approvedSenderService.getAllApprovedSenders()).thenReturn(List.of(sender));
+
+        ResponseEntity<List<ApprovedSenderDto>> response = approvedSenderController.getAllApprovedSenders(authentication);
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertNotNull(response.getBody());
+        assertEquals(1, response.getBody().size());
+
+        verify(auditLogService).emitAuditEvent(
+                eq("APPROVED_SENDER_READ_ALL"),
+                eq("ALL"),
+                eq("Approved Senders List"),
+                eq(ActorType.USER),
+                eq(USER_EMAIL),
+                eq(USER_EMAIL),
+                eq(Map.of("count", 1)),
+                eq("SUCCESS")
+        );
+    }
+
+    @Test
+    void createApprovedSender_Success() {
+        ApprovedSenderDto dto = new ApprovedSenderDto();
+        dto.setEmail("alerts@fdic.gov");
+
+        ApprovedSenderDto created = new ApprovedSenderDto();
+        created.setId(5L);
+        created.setEmail("alerts@fdic.gov");
+
+        when(approvedSenderService.createApprovedSender(any(ApprovedSenderDto.class), eq(USER_EMAIL))).thenReturn(created);
+
+        ResponseEntity<ApprovedSenderDto> response = approvedSenderController.createApprovedSender(dto, authentication);
+
+        assertEquals(HttpStatus.CREATED, response.getStatusCode());
+        assertEquals(5L, response.getBody().getId());
+
+        verify(auditLogService).emitAuditEvent(
+                eq("APPROVED_SENDER_CREATE"),
+                eq("5"),
+                eq("alerts@fdic.gov"),
+                eq(ActorType.USER),
+                eq(USER_EMAIL),
+                eq(USER_EMAIL),
+                eq(Map.of("email", "alerts@fdic.gov")),
+                eq("SUCCESS")
+        );
+    }
+
+    @Test
+    void deleteApprovedSender_Success() {
+        Long id = 8L;
+
+        doNothing().when(approvedSenderService).deleteApprovedSender(id, USER_EMAIL);
+
+        ResponseEntity<Void> response = approvedSenderController.deleteApprovedSender(id, authentication);
+
+        assertEquals(HttpStatus.NO_CONTENT, response.getStatusCode());
+
+        verify(auditLogService).emitAuditEvent(
+                eq("APPROVED_SENDER_DELETE"),
+                eq("8"),
+                eq("Approved Sender 8"),
+                eq(ActorType.USER),
+                eq(USER_EMAIL),
+                eq(USER_EMAIL),
+                eq(Map.of("senderId", 8L)),
+                eq("SUCCESS")
+        );
+    }
+}

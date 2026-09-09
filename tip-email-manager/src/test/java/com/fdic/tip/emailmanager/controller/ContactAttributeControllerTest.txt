@@ -1,0 +1,153 @@
+package gov.fdic.tip.emailmanager.controller;
+
+import gov.fdic.tip.emailmanager.constant.ActorType;
+import gov.fdic.tip.emailmanager.dto.ContactAttributeDto;
+import gov.fdic.tip.emailmanager.service.AuditLogService;
+import gov.fdic.tip.emailmanager.service.ContactAttributeService;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
+
+import java.util.List;
+import java.util.Map;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.*;
+
+@ExtendWith(MockitoExtension.class)
+class ContactAttributeControllerTest {
+
+    @Mock
+    private ContactAttributeService contactAttributeService;
+
+    @Mock
+    private AuditLogService auditLogService;
+
+    @Mock
+    private Authentication authentication;
+
+    @InjectMocks
+    private ContactAttributeController contactAttributeController;
+
+    private static final String USER_EMAIL = "admin@fdic.gov";
+
+    @BeforeEach
+    void setUp() {
+        lenient().when(authentication.getName()).thenReturn(USER_EMAIL);
+    }
+
+    @Test
+    void getAllContactAttributes_Success() {
+        ContactAttributeDto attr = new ContactAttributeDto();
+        attr.setId(1L);
+        attr.setName("Department");
+
+        when(contactAttributeService.getAllContactAttributes()).thenReturn(List.of(attr));
+
+        ResponseEntity<List<ContactAttributeDto>> response = contactAttributeController.getAllContactAttributes(authentication);
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertNotNull(response.getBody());
+        assertEquals(1, response.getBody().size());
+
+        verify(auditLogService).emitAuditEvent(
+                eq("CONTACT_ATTRIBUTE_READ_ALL"),
+                eq("ALL"),
+                eq("Contact Attributes List"),
+                eq(ActorType.USER),
+                eq(USER_EMAIL),
+                eq(USER_EMAIL),
+                eq(Map.of("count", 1)),
+                eq("SUCCESS")
+        );
+    }
+
+    @Test
+    void createContactAttribute_Success() {
+        ContactAttributeDto dto = new ContactAttributeDto();
+        dto.setName("Division");
+
+        ContactAttributeDto created = new ContactAttributeDto();
+        created.setId(2L);
+        created.setName("Division");
+
+        when(contactAttributeService.createContactAttribute(any(ContactAttributeDto.class), eq(USER_EMAIL))).thenReturn(created);
+
+        ResponseEntity<ContactAttributeDto> response = contactAttributeController.createContactAttribute(dto, authentication);
+
+        assertEquals(HttpStatus.CREATED, response.getStatusCode());
+        assertNotNull(response.getBody());
+        assertEquals(2L, response.getBody().getId());
+
+        verify(auditLogService).emitAuditEvent(
+                eq("CONTACT_ATTRIBUTE_CREATE"),
+                eq("2"),
+                eq("Division"),
+                eq(ActorType.USER),
+                eq(USER_EMAIL),
+                eq(USER_EMAIL),
+                eq(Map.of("attributeName", "Division")),
+                eq("SUCCESS")
+        );
+    }
+
+    @Test
+    void updateContactAttribute_Success() {
+        Long id = 2L;
+        ContactAttributeDto dto = new ContactAttributeDto();
+        dto.setName("Branch");
+
+        ContactAttributeDto updated = new ContactAttributeDto();
+        updated.setId(id);
+        updated.setName("Branch");
+
+        when(contactAttributeService.updateContactAttribute(eq(id), any(ContactAttributeDto.class), eq(USER_EMAIL))).thenReturn(updated);
+
+        ResponseEntity<ContactAttributeDto> response = contactAttributeController.updateContactAttribute(id, dto, authentication);
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals("Branch", response.getBody().getName());
+
+        verify(auditLogService).emitAuditEvent(
+                eq("CONTACT_ATTRIBUTE_UPDATE"),
+                eq("2"),
+                eq("Branch"),
+                eq(ActorType.USER),
+                eq(USER_EMAIL),
+                eq(USER_EMAIL),
+                eq(Map.of("attributeName", "Branch")),
+                eq("SUCCESS")
+        );
+    }
+
+    @Test
+    void deleteContactAttribute_Success() {
+        Long id = 4L;
+
+        doNothing().when(contactAttributeService).deleteContactAttribute(id, USER_EMAIL);
+
+        ResponseEntity<Void> response = contactAttributeController.deleteContactAttribute(id, authentication);
+
+        assertEquals(HttpStatus.NO_CONTENT, response.getStatusCode());
+
+        verify(auditLogService).emitAuditEvent(
+                eq("CONTACT_ATTRIBUTE_DELETE"),
+                eq("4"),
+                eq("Contact Attribute 4"),
+                eq(ActorType.USER),
+                eq(USER_EMAIL),
+                eq(USER_EMAIL),
+                eq(Map.of("attributeId", 4L)),
+                eq("SUCCESS")
+        );
+    }
+}
