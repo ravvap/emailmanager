@@ -44,16 +44,25 @@ public class BusinessEventAuditService {
     }
 
     /**
-     * Queries and filters audit logs based on user search criteria[cite: 45].
+     * Queries and filters audit logs based on user search criteria (EM-18).
+     * Enforces that target_entity_label must contain "Email Manager" (case-insensitive).
      *
      * @param filter DTO containing dateTime, user, functionality, activity, and search criteria
-     * @param pageable pagination details
+     * @param pageable pagination and sorting specifications
      * @return page of formatted AuditLogResponseDto items
      */
     @Transactional(readOnly = true)
     public Page<AuditLogResponseDto> searchAuditLogs(AuditLogSearchFilter filter, Pageable pageable) {
-        Specification<BusinessEventAudit> spec = createSearchSpecification(filter);
-        return auditRepository.findAll(spec, pageable).map(this::mapToDto);
+        // Base specification enforcing target_entity_label contains "Email Manager"
+        Specification<BusinessEventAudit> emailManagerSpec = (root, query, cb) -> 
+            cb.like(cb.lower(root.get("targetEntityLabel")), "%email manager%");
+
+        // Combine base rule with dynamic search filters
+        Specification<BusinessEventAudit> combinedSpec = Specification
+                .where(emailManagerSpec)
+                .and(createSearchSpecification(filter));
+
+        return auditRepository.findAll(combinedSpec, pageable).map(this::mapToDto);
     }
 
     /**
