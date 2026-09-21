@@ -1,0 +1,259 @@
+{
+	"info": {
+		"_postman_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+		"name": "Audit Log Service API",
+		"description": "Collection for searching, filtering, and querying business event audit logs (EM-18).",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "http://localhost:8080",
+			"type": "string"
+		},
+		{
+			"key": "authToken",
+			"value": "your_bearer_token_here",
+			"type": "string"
+		}
+	],
+	"auth": {
+		"type": "bearer",
+		"bearer": [
+			{
+				"key": "token",
+				"value": "{{authToken}}",
+				"type": "string"
+			}
+		]
+	},
+	"item": [
+		{
+			"name": "Search Audit Logs - All Parameters",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"startDateTime\": \"2026-09-01T00:00:00Z\",\n  \"endDateTime\": \"2026-09-21T23:59:59Z\",\n  \"user\": \"john.doe\",\n  \"functionality\": \"Templates\",\n  \"activity\": \"TEMPLATE_CREATE\",\n  \"searchKeyword\": \"draft\"\n}"
+				},
+				"url": {
+					"raw": "{{baseUrl}}/api/v1/audit-logs/search?page=0&size=20&sort=timestamp,desc",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"api",
+						"v1",
+						"audit-logs",
+						"search"
+					],
+					"query": [
+						{
+							"key": "page",
+							"value": "0",
+							"description": "Page index"
+						},
+						{
+							"key": "size",
+							"value": "20",
+							"description": "Page size"
+						},
+						{
+							"key": "sort",
+							"value": "timestamp,desc",
+							"description": "Sort order"
+						}
+					]
+				},
+				"description": "Searches audit logs using all available search filter fields: date range, user, functionality, activity, and JSON keyword search."
+			},
+			"response": []
+		},
+		{
+			"name": "Search Audit Logs - By Date/Time Range",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"startDateTime\": \"2026-09-01T00:00:00Z\",\n  \"endDateTime\": \"2026-09-21T23:59:59Z\"\n}"
+				},
+				"url": {
+					"raw": "{{baseUrl}}/api/v1/audit-logs/search?page=0&size=20",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"api",
+						"v1",
+						"audit-logs",
+						"search"
+					],
+					"query": [
+						{
+							"key": "page",
+							"value": "0"
+						},
+						{
+							"key": "size",
+							"value": "20"
+						}
+					]
+				},
+				"description": "Filters audit events bounded by startDateTime and endDateTime."
+			},
+			"response": []
+		},
+		{
+			"name": "Search Audit Logs - By User",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"user\": \"jane.smith\"\n}"
+				},
+				"url": {
+					"raw": "{{baseUrl}}/api/v1/audit-logs/search",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"api",
+						"v1",
+						"audit-logs",
+						"search"
+					]
+				},
+				"description": "Filters audit events performed by a specific user (matches actorLabel or actorId)."
+			},
+			"response": []
+		},
+		{
+			"name": "Search Audit Logs - By Functionality (Module)",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"functionality\": \"Templates\"\n}"
+				},
+				"url": {
+					"raw": "{{baseUrl}}/api/v1/audit-logs/search",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"api",
+						"v1",
+						"audit-logs",
+						"search"
+					]
+				},
+				"description": "Filters audit events by target system functionality or module."
+			},
+			"response": []
+		},
+		{
+			"name": "Search Audit Logs - By Activity",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"activity\": \"TEMPLATE_APPROVE\"\n}"
+				},
+				"url": {
+					"raw": "{{baseUrl}}/api/v1/audit-logs/search",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"api",
+						"v1",
+						"audit-logs",
+						"search"
+					]
+				},
+				"description": "Filters audit events by action activity type (eventType or targetEntityLabel)."
+			},
+			"response": []
+		},
+		{
+			"name": "Search Audit Logs - Unfiltered / All (Default Pagination)",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{}"
+				},
+				"url": {
+					"raw": "{{baseUrl}}/api/v1/audit-logs/search?page=0&size=10&sort=timestamp,desc",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"api",
+						"v1",
+						"audit-logs",
+						"search"
+					],
+					"query": [
+						{
+							"key": "page",
+							"value": "0"
+						},
+						{
+							"key": "size",
+							"value": "10"
+						},
+						{
+							"key": "sort",
+							"value": "timestamp,desc"
+						}
+					]
+				},
+				"description": "Retrieves the initial page of audit logs without any active filters."
+			},
+			"response": []
+		}
+	]
+}
