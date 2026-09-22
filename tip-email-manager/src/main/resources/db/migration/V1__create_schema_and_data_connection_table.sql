@@ -135,3 +135,22 @@ CREATE TABLE contact_attribute_value (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
     CONSTRAINT uq_contact_attribute UNIQUE (contact_id, attribute_id)
 );
+
+
+-- GIN Trigram index on jsonb cast directly to lower text
+CREATE INDEX idx_audit_details_lower_trgm 
+ON business_events_audit USING gin (LOWER((details)::text) gin_trgm_ops);
+
+CREATE INDEX idx_audit_email_manager 
+ON business_events_audit (timestamp DESC) 
+WHERE LOWER(target_entity_label) LIKE '%email manager%';
+
+CREATE INDEX idx_audit_actor_timestamp 
+ON business_events_audit (actor_label, timestamp DESC);
+
+CREATE INDEX idx_audit_module_timestamp 
+ON business_events_audit (module, timestamp DESC);
+
+-- GIN Trigram index casting details directly to text without a custom function
+CREATE INDEX idx_audit_details_trgm 
+ON business_events_audit USING gin (LOWER((details)::text) gin_trgm_ops);

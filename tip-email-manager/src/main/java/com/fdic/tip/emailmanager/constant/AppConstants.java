@@ -4,6 +4,26 @@ public final class AppConstants {
 
     private AppConstants() {}
 
+ // Role Permissions
+    public static final String PERM_MANAGE_QUERIES = "hasAnyRole('SR_ANALYST', 'MANAGER', 'SYS_ADMIN')";
+    public static final String PERM_VIEW_QUERIES   = "hasAnyRole('SR_ANALYST', 'MANAGER', 'SYS_ADMIN', 'AUDITOR', 'READ_ONLY')";
+
+    // Exception & Validation Messages
+    public static final String MSG_QUERY_NOT_FOUND       = "Data source query version not found.";
+    public static final String MSG_CANNOT_SELF_APPROVE   = "Maker-Checker policy violation: Submitter cannot approve or reject their own version.";
+    public static final String MSG_NOT_PENDING_REVIEW    = "Only query versions in 'PENDING_REVIEW' state can be approved or rejected.";
+    public static final String MSG_NOT_ACTIVE            = "Only 'ACTIVE' query versions can be edited.";
+    public static final String MSG_CANNOT_HARD_DELETE    = "Query version cannot be permanently deleted because it is referenced by one or more templates. Use retire instead.";
+    public static final String MSG_MUTATION_SQL_REJECTED = "Invalid SQL query: Data-modifying or DDL statements (INSERT, UPDATE, DELETE, DROP, ALTER, TRUNCATE) are strictly prohibited.";
+    public static final String MSG_SUCCESS_APPROVED      = "Data source query version approved successfully.";
+    public static final String MSG_SUCCESS_REJECTED      = "Data source query version rejected successfully.";
+    public static final String MSG_SUCCESS_RETIRED       = "Data source query version retired successfully.";
+
+    // SQL Guardrail Regex
+    public static final String DISALLOWED_SQL_REGEX = "(?i).*\\b(INSERT|UPDATE|DELETE|DROP|ALTER|TRUNCATE|GRANT|REVOKE|CREATE)\\b.*";
+    
+    
+    
     // Security Roles
     public static final String ROLE_ADMIN = "ROLE_TIP_ADMINISTRATOR";
     public static final String ROLE_AUTHOR = "ROLE_TEMPLATE_AUTHOR";

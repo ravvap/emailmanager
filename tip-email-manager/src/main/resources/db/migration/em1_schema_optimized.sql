@@ -249,3 +249,38 @@ CREATE TABLE distribution_list_member (
     added_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
     CONSTRAINT uq_list_contact UNIQUE (list_id, contact_id)
 );
+
+CREATE TABLE data_source_query (
+    id UUID NOT NULL PRIMARY KEY,
+    asset_id UUID NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    connection_id VARCHAR(255) NOT NULL,
+    sql_text TEXT NOT NULL,
+    parameters VARCHAR(1000),
+    version INT NOT NULL,
+    status VARCHAR(20) NOT NULL,
+    reference_count INT NOT NULL DEFAULT 0,
+    created_by VARCHAR(255) NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL,
+    reviewed_by VARCHAR(255),
+    reviewed_at TIMESTAMPTZ,
+    
+    -- Check constraint for allowed status values
+    CONSTRAINT chk_query_status CHECK (status IN ('PENDING_REVIEW', 'ACTIVE', 'REJECTED', 'RETIRED')),
+    
+    -- Foreign key linking to data_connection table
+    CONSTRAINT fk_ds_query_connection FOREIGN KEY (connection_id) 
+        REFERENCES data_connection (id) ON DELETE RESTRICT
+);
+
+-- Index for optimizing joins/filters on connection_id
+CREATE INDEX idx_ds_query_connection 
+ON data_source_query (connection_id);
+
+-- Index to quickly query all versions of a query asset ordered by version descending
+CREATE INDEX idx_ds_query_asset_version 
+ON data_source_query (asset_id, version DESC);
+
+-- Index for listing/filtering queries by status and creation time
+CREATE INDEX idx_ds_query_status_created 
+ON data_source_query (status, created_at DESC);
