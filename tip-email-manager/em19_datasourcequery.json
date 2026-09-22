@@ -1,0 +1,420 @@
+{
+	"info": {
+		"_postman_id": "b3e9a12c-4f81-432d-9e67-88992a01f891",
+		"name": "Data Source Query Governance API",
+		"description": "Postman test suite covering Data Source Query governance workflows, maker-checker authorization, SQL validations, edit-versioning, and lifecycle operations.",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "http://localhost:8080/api/v1",
+			"type": "string"
+		},
+		{
+			"key": "createdAssetId",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "version1_Id",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "version2_Id",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "sampleConnectionId",
+			"value": "conn-fdic-edw-read-only",
+			"type": "string"
+		}
+	],
+	"item": [
+		{
+			"name": "1. Add Query (Positive - v1 Creation)",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"pm.test('Status code is 201 Created', function () {",
+							"    pm.response.to.have.status(201);",
+							"});",
+							"var jsonData = pm.response.json();",
+							"pm.test('Version should be 1 and status PENDING_REVIEW', function () {",
+							"    pm.expect(jsonData.version).to.eql(1);",
+							"    pm.expect(jsonData.status).to.eql('PENDING_REVIEW');",
+							"});",
+							"if (jsonData.id) {",
+							"    pm.collectionVariables.set('version1_Id', jsonData.id);",
+							"    pm.collectionVariables.set('createdAssetId', jsonData.assetId);",
+							"}"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"auth": {
+					"type": "basic",
+					"basic": [
+						{ "key": "username", "value": "analyst1", "type": "string" },
+						{ "key": "password", "value": "password", "type": "string" }
+					]
+				},
+				"method": "POST",
+				"header": [
+					{ "key": "Content-Type", "value": "application/json" }
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"name\": \"Active Community Banks - SE Region\",\n  \"connectionId\": \"{{sampleConnectionId}}\",\n  \"sqlText\": \"SELECT full_name, email, due_date FROM v_filings WHERE region = :region AND status = 'active'\",\n  \"parameters\": \"region (supplied at send time)\"\n}"
+				},
+				"url": {
+					"raw": "{{baseUrl}}/data-source-queries",
+					"host": ["{{baseUrl}}"],
+					"path": ["data-source-queries"]
+				}
+			}
+		},
+		{
+			"name": "2. Validation - Reject DML Statements (INSERT/UPDATE/DELETE)",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"pm.test('Status code is 400 Bad Request', function () {",
+							"    pm.response.to.have.status(400);",
+							"});",
+							"pm.test('Returns validation error for non-SELECT query', function () {",
+							"    pm.expect(pm.response.text()).to.include('Only SELECT queries are permitted');",
+							"});"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"auth": {
+					"type": "basic",
+					"basic": [
+						{ "key": "username", "value": "analyst1", "type": "string" },
+						{ "key": "password", "value": "password", "type": "string" }
+					]
+				},
+				"method": "POST",
+				"header": [
+					{ "key": "Content-Type", "value": "application/json" }
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"name\": \"Malicious Query Attempt\",\n  \"connectionId\": \"{{sampleConnectionId}}\",\n  \"sqlText\": \"DELETE FROM v_filings WHERE region = 'SE'\",\n  \"parameters\": \"none\"\n}"
+				},
+				"url": {
+					"raw": "{{baseUrl}}/data-source-queries",
+					"host": ["{{baseUrl}}"],
+					"path": ["data-source-queries"]
+				}
+			}
+		},
+		{
+			"name": "3. Validation - Maker-Checker Self Approval Restriction",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"pm.test('Status code is 403 Forbidden or 500 Security Exception', function () {",
+							"    pm.expect(pm.response.code).to.be.oneOf([403, 500]);",
+							"});",
+							"pm.test('Message indicates submitter cannot approve own submission', function () {",
+							"    pm.expect(pm.response.text()).to.include('Submitter cannot approve or reject');",
+							"});"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"auth": {
+					"type": "basic",
+					"basic": [
+						{ "key": "username", "value": "analyst1", "type": "string" },
+						{ "key": "password", "value": "password", "type": "string" }
+					]
+				},
+				"method": "PUT",
+				"url": {
+					"raw": "{{baseUrl}}/data-source-queries/{{version1_Id}}/approve",
+					"host": ["{{baseUrl}}"],
+					"path": ["data-source-queries", "{{version1_Id}}", "approve"]
+				}
+			}
+		},
+		{
+			"name": "4. Approve Query (Checker Action - Manager Role)",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"pm.test('Status code is 200 OK', function () {",
+							"    pm.response.to.have.status(200);",
+							"});",
+							"var jsonData = pm.response.json();",
+							"pm.test('Query status transitions to ACTIVE', function () {",
+							"    pm.expect(jsonData.status).to.eql('ACTIVE');",
+							"    pm.expect(jsonData.reviewedBy).to.eql('manager1');",
+							"});"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"auth": {
+					"type": "basic",
+					"basic": [
+						{ "key": "username", "value": "manager1", "type": "string" },
+						{ "key": "password", "value": "password", "type": "string" }
+					]
+				},
+				"method": "PUT",
+				"url": {
+					"raw": "{{baseUrl}}/data-source-queries/{{version1_Id}}/approve",
+					"host": ["{{baseUrl}}"],
+					"path": ["data-source-queries", "{{version1_Id}}", "approve"]
+				}
+			}
+		},
+		{
+			"name": "5. Edit Query (Creates Version 2 in PENDING_REVIEW)",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"pm.test('Status code is 201 Created', function () {",
+							"    pm.response.to.have.status(201);",
+							"});",
+							"var jsonData = pm.response.json();",
+							"pm.test('New version is 2 and status is PENDING_REVIEW', function () {",
+							"    pm.expect(jsonData.version).to.eql(2);",
+							"    pm.expect(jsonData.status).to.eql('PENDING_REVIEW');",
+							"});",
+							"if (jsonData.id) {",
+							"    pm.collectionVariables.set('version2_Id', jsonData.id);",
+							"}"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"auth": {
+					"type": "basic",
+					"basic": [
+						{ "key": "username", "value": "analyst1", "type": "string" },
+						{ "key": "password", "value": "password", "type": "string" }
+					]
+				},
+				"method": "POST",
+				"header": [
+					{ "key": "Content-Type", "value": "application/json" }
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"name\": \"Active Community Banks - SE Region\",\n  \"connectionId\": \"{{sampleConnectionId}}\",\n  \"sqlText\": \"SELECT full_name, email, due_date, bank_code FROM v_filings WHERE region = :region AND status = 'active'\",\n  \"parameters\": \"region (supplied at send time)\"\n}"
+				},
+				"url": {
+					"raw": "{{baseUrl}}/data-source-queries/{{version1_Id}}/edit",
+					"host": ["{{baseUrl}}"],
+					"path": ["data-source-queries", "{{version1_Id}}", "edit"]
+				}
+			}
+		},
+		{
+			"name": "6. Validation - Reject Editing a Non-ACTIVE Query",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"pm.test('Status code is 400 or 500 Bad Request/Illegal State', function () {",
+							"    pm.expect(pm.response.code).to.be.oneOf([400, 500]);",
+							"});",
+							"pm.test('Error message indicates edit is only allowed for ACTIVE queries', function () {",
+							"    pm.expect(pm.response.text()).to.include('Edit is only available for ACTIVE');",
+							"});"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"auth": {
+					"type": "basic",
+					"basic": [
+						{ "key": "username", "value": "analyst1", "type": "string" },
+						{ "key": "password", "value": "password", "type": "string" }
+					]
+				},
+				"method": "POST",
+				"header": [
+					{ "key": "Content-Type", "value": "application/json" }
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"name\": \"Active Community Banks - SE Region\",\n  \"connectionId\": \"{{sampleConnectionId}}\",\n  \"sqlText\": \"SELECT full_name, email FROM v_filings\",\n  \"parameters\": \"none\"\n}"
+				},
+				"url": {
+					"raw": "{{baseUrl}}/data-source-queries/{{version2_Id}}/edit",
+					"host": ["{{baseUrl}}"],
+					"path": ["data-source-queries", "{{version2_Id}}", "edit"]
+				}
+			}
+		},
+		{
+			"name": "7. Reject Query Version 2 (Checker Action)",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"pm.test('Status code is 200 OK', function () {",
+							"    pm.response.to.have.status(200);",
+							"});",
+							"var jsonData = pm.response.json();",
+							"pm.test('Query version status transitions to REJECTED', function () {",
+							"    pm.expect(jsonData.status).to.eql('REJECTED');",
+							"});"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"auth": {
+					"type": "basic",
+					"basic": [
+						{ "key": "username", "value": "manager1", "type": "string" },
+						{ "key": "password", "value": "password", "type": "string" }
+					]
+				},
+				"method": "PUT",
+				"url": {
+					"raw": "{{baseUrl}}/data-source-queries/{{version2_Id}}/reject",
+					"host": ["{{baseUrl}}"],
+					"path": ["data-source-queries", "{{version2_Id}}", "reject"]
+				}
+			}
+		},
+		{
+			"name": "8. Get Asset Version History",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"pm.test('Status code is 200 OK', function () {",
+							"    pm.response.to.have.status(200);",
+							"});",
+							"var jsonData = pm.response.json();",
+							"pm.test('History contains both v2 and v1 ordered descending', function () {",
+							"    pm.expect(jsonData.length).to.be.at.least(2);",
+							"    pm.expect(jsonData[0].version).to.eql(2);",
+							"    pm.expect(jsonData[1].version).to.eql(1);",
+							"});"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"auth": {
+					"type": "basic",
+					"basic": [
+						{ "key": "username", "value": "analyst1", "type": "string" },
+						{ "key": "password", "value": "password", "type": "string" }
+					]
+				},
+				"method": "GET",
+				"url": {
+					"raw": "{{baseUrl}}/data-source-queries/history/{{createdAssetId}}",
+					"host": ["{{baseUrl}}"],
+					"path": ["data-source-queries", "history", "{{createdAssetId}}"]
+				}
+			}
+		},
+		{
+			"name": "9. Retire Query Version (Soft Delete)",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"pm.test('Status code is 200 OK', function () {",
+							"    pm.response.to.have.status(200);",
+							"});",
+							"var jsonData = pm.response.json();",
+							"pm.test('Query version status transitions to RETIRED', function () {",
+							"    pm.expect(jsonData.status).to.eql('RETIRED');",
+							"});"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"auth": {
+					"type": "basic",
+					"basic": [
+						{ "key": "username", "value": "analyst1", "type": "string" },
+						{ "key": "password", "value": "password", "type": "string" }
+					]
+				},
+				"method": "PUT",
+				"url": {
+					"raw": "{{baseUrl}}/data-source-queries/{{version1_Id}}/retire",
+					"host": ["{{baseUrl}}"],
+					"path": ["data-source-queries", "{{version1_Id}}", "retire"]
+				}
+			}
+		},
+		{
+			"name": "10. Delete Query Version 2 (Hard Delete - Unreferenced)",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"pm.test('Status code is 204 No Content', function () {",
+							"    pm.response.to.have.status(204);",
+							"});"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"auth": {
+					"type": "basic",
+					"basic": [
+						{ "key": "username", "value": "analyst1", "type": "string" },
+						{ "key": "password", "value": "password", "type": "string" }
+					]
+				},
+				"method": "DELETE",
+				"url": {
+					"raw": "{{baseUrl}}/data-source-queries/{{version2_Id}}",
+					"host": ["{{baseUrl}}"],
+					"path": ["data-source-queries", "{{version2_Id}}"]
+				}
+			}
+		}
+	]
+}
