@@ -20,4 +20,12 @@ public class VersionHistoryEntryResponse {
     String decidedBy;
     OffsetDateTime decidedAt;
     Long restoredFromVersionNumber;
+
+    // Same fields EmailTemplateDetailResponse carries for the current
+    // version — surfaced per history row too, since EM-11 is explicitly
+    // "who submitted and approved each, and when" and a reviewer's
+    // rejection reason is part of that record.
+    String approvalComments;
+    String decisionComments;
+    String rejectionReason;
 }

@@ -1,6 +1,8 @@
 package com.fdic.tip.emailmanager.template.service;
 
 import com.fdic.tip.emailmanager.common.constants.EmailTemplateConstants;
+import com.fdic.tip.emailmanager.common.constants.RecipientDirectoryConstants;
+import com.fdic.tip.emailmanager.common.constants.RecipientFileConstants;
 import com.fdic.tip.emailmanager.common.constants.SecurityRoles;
 import com.fdic.tip.emailmanager.template.dto.*;
 import com.fdic.tip.emailmanager.template.entity.*;
@@ -33,6 +35,10 @@ public class EmailTemplateServiceImpl implements EmailTemplateService {
     private final DataSourceQueryPort dataSourceQueryPort;
     private final AttachmentStoragePort attachmentStoragePort;
     private final RichTextSanitizerPort richTextSanitizerPort;
+    private final DistributionListDirectoryPort distributionListDirectoryPort;
+    private final ContactDirectoryPort contactDirectoryPort;
+    private final RecipientFileStoragePort recipientFileStoragePort;
+    private final RecipientFileParserPort recipientFileParserPort;
 
     private static final List<VersionStatus> OPEN_VERSION_STATUSES = List.of(VersionStatus.DRAFT, VersionStatus.PENDING_APPROVAL);
 
@@ -133,9 +139,38 @@ public class EmailTemplateServiceImpl implements EmailTemplateService {
         version.setRecipientEmailColumn(request.getRecipientEmailColumn());
         version.setRecipientNameColumn(request.getRecipientNameColumn());
 
-        List<String> validColumns = dataSourceQueryPort.getColumns(version.getDataSourceQueryId(), version.getDataSourceQueryVersion());
-        boolean mappingBroken = !isBlank(request.getRecipientEmailColumn()) && !validColumns.contains(request.getRecipientEmailColumn());
-        mappingBroken = mappingBroken || (!isBlank(request.getRecipientNameColumn()) && !validColumns.contains(request.getRecipientNameColumn()));
+        // FIX: column-mapping validation now branches by mode instead of
+        // always checking against the pinned query's columns. Only
+        // DATA_SOURCE_QUERY mode has a query to validate against — doing
+        // this unconditionally previously flagged CONTACT_DISTRIBUTION_LIST
+        // and FILE_UPLOAD mappings as broken against the wrong column set.
+        boolean mappingBroken = switch (request.getRecipientMode()) {
+            case DATA_SOURCE_QUERY -> {
+                List<String> validColumns = dataSourceQueryPort.getColumns(version.getDataSourceQueryId(), version.getDataSourceQueryVersion());
+                boolean broken = !isBlank(request.getRecipientEmailColumn()) && !validColumns.contains(request.getRecipientEmailColumn());
+                yield broken || (!isBlank(request.getRecipientNameColumn()) && !validColumns.contains(request.getRecipientNameColumn()));
+            }
+            // FIX: now validated against the uploaded file's actual header
+            // row (via uploadRecipientFile/selectRecipientSheet, which must
+            // run first) instead of being silently skipped.
+            case FILE_UPLOAD -> {
+                if (isBlank(version.getRecipientFileName())) {
+                    throw new IllegalStateException(RecipientFileConstants.MSG_NO_FILE_UPLOADED);
+                }
+                if (isBlank(version.getRecipientSheetName())) {
+                    throw new IllegalStateException(RecipientFileConstants.MSG_NO_SHEET_SELECTED);
+                }
+                byte[] content = recipientFileStoragePort.fetch(version.getRecipientFileStoragePath());
+                List<String> fileColumns = recipientFileParserPort.getColumnHeaders(
+                        content, version.getRecipientFileName(), version.getRecipientSheetName());
+                boolean broken = !isBlank(request.getRecipientEmailColumn()) && !fileColumns.contains(request.getRecipientEmailColumn());
+                yield broken || (!isBlank(request.getRecipientNameColumn()) && !fileColumns.contains(request.getRecipientNameColumn()));
+            }
+            // CONTACT_DISTRIBUTION_LIST: recipients are the selected lists/
+            // contacts below, not a column mapping — nothing to check here.
+            // DEFINE_AT_SEND: no mapping exists yet at authoring time.
+            case CONTACT_DISTRIBUTION_LIST, DEFINE_AT_SEND -> false;
+        };
         version.setHasRecipientMappingConflict(mappingBroken);
 
         version.setUpdatedBy(currentUser);
@@ -143,20 +178,30 @@ public class EmailTemplateServiceImpl implements EmailTemplateService {
 
         recipientSelectionRepository.deleteByTemplateVersion_TemplateVersionId(version.getTemplateVersionId());
         if (request.getRecipientMode() == RecipientMode.CONTACT_DISTRIBUTION_LIST) {
-            if (request.getDistributionListIds() != null) {
-                request.getDistributionListIds().forEach(listId ->
-                        recipientSelectionRepository.save(EmailTemplateRecipientSelection.builder()
-                                .templateVersion(version)
-                                .distributionListId(listId)
-                                .build()));
+            List<Long> distributionListIds = request.getDistributionListIds() != null ? request.getDistributionListIds() : List.of();
+            List<Long> contactIds = request.getContactIds() != null ? request.getContactIds() : List.of();
+
+            // FIX: selections are now validated against the existing
+            // distribution-list / contacts directory endpoints before being
+            // persisted — previously any id was stored unchecked, so a
+            // typo'd or inactive id would silently reach approval/send.
+            List<Long> invalidLists = distributionListDirectoryPort.findInvalidIds(distributionListIds);
+            List<Long> invalidContacts = contactDirectoryPort.findInvalidIds(contactIds);
+            if (!invalidLists.isEmpty() || !invalidContacts.isEmpty()) {
+                throw new IllegalArgumentException(RecipientDirectoryConstants.MSG_INVALID_RECIPIENT_SELECTION
+                        + " invalidDistributionListIds=" + invalidLists + " invalidContactIds=" + invalidContacts);
             }
-            if (request.getContactIds() != null) {
-                request.getContactIds().forEach(contactId ->
-                        recipientSelectionRepository.save(EmailTemplateRecipientSelection.builder()
-                                .templateVersion(version)
-                                .contactId(contactId)
-                                .build()));
-            }
+
+            distributionListIds.forEach(listId ->
+                    recipientSelectionRepository.save(EmailTemplateRecipientSelection.builder()
+                            .templateVersion(version)
+                            .distributionListId(listId)
+                            .build()));
+            contactIds.forEach(contactId ->
+                    recipientSelectionRepository.save(EmailTemplateRecipientSelection.builder()
+                            .templateVersion(version)
+                            .contactId(contactId)
+                            .build()));
         }
 
         audit(templateId, version.getTemplateVersionId(), "RECIPIENTS_UPDATED", currentUser, request.getRecipientMode().name());
@@ -194,6 +239,71 @@ public class EmailTemplateServiceImpl implements EmailTemplateService {
         return toDetailResponse(template, version);
     }
 
+    // ===================================================================
+    // FILE_UPLOAD recipient mode (Preview screen's File / Sheet / column
+    // mapping) — previously had no step/endpoint to persist any of this.
+    // ===================================================================
+    @Override
+    public RecipientFileUploadResponse uploadRecipientFile(Long templateId, MultipartFile file, String currentUser) {
+        EmailTemplate template = getTemplateOrThrow(templateId);
+        EmailTemplateVersion version = getEditableCurrentVersion(template);
+
+        if (file.getSize() > RecipientFileConstants.MAX_SIZE_BYTES) {
+            throw new IllegalArgumentException(RecipientFileConstants.MSG_FILE_TOO_LARGE);
+        }
+        String extension = getExtension(file.getOriginalFilename());
+        if (!List.of(RecipientFileConstants.ALLOWED_EXTENSIONS).contains(extension.toLowerCase(Locale.ROOT))) {
+            throw new IllegalArgumentException(RecipientFileConstants.MSG_FILE_TYPE_NOT_ALLOWED);
+        }
+
+        String storagePath = recipientFileStoragePort.storeAndScan(file);
+        byte[] content = recipientFileStoragePort.fetch(storagePath);
+        List<String> sheetNames = recipientFileParserPort.listSheetNames(content, file.getOriginalFilename());
+
+        // A new file invalidates any previously selected sheet/column mapping.
+        version.setRecipientFileName(file.getOriginalFilename());
+        version.setRecipientFileStoragePath(storagePath);
+        version.setRecipientSheetName(null);
+        version.setRecipientEmailColumn(null);
+        version.setRecipientNameColumn(null);
+        version.setHasRecipientMappingConflict(false);
+        version.setUpdatedBy(currentUser);
+        versionRepository.save(version);
+
+        audit(templateId, version.getTemplateVersionId(), "RECIPIENT_FILE_UPLOADED", currentUser, file.getOriginalFilename());
+        return RecipientFileUploadResponse.builder()
+                .fileName(file.getOriginalFilename())
+                .sheetNames(sheetNames)
+                .build();
+    }
+
+    @Override
+    public RecipientSheetColumnsResponse selectRecipientSheet(Long templateId, RecipientSheetSelectionRequest request, String currentUser) {
+        EmailTemplate template = getTemplateOrThrow(templateId);
+        EmailTemplateVersion version = getEditableCurrentVersion(template);
+
+        if (isBlank(version.getRecipientFileName()) || isBlank(version.getRecipientFileStoragePath())) {
+            throw new IllegalStateException(RecipientFileConstants.MSG_NO_FILE_UPLOADED);
+        }
+
+        byte[] content = recipientFileStoragePort.fetch(version.getRecipientFileStoragePath());
+        List<String> columns = recipientFileParserPort.getColumnHeaders(content, version.getRecipientFileName(), request.getSheetName());
+
+        version.setRecipientSheetName(request.getSheetName());
+        // Selecting a (new) sheet invalidates whatever column mapping was chosen against the previous one.
+        version.setRecipientEmailColumn(null);
+        version.setRecipientNameColumn(null);
+        version.setHasRecipientMappingConflict(false);
+        version.setUpdatedBy(currentUser);
+        versionRepository.save(version);
+
+        audit(templateId, version.getTemplateVersionId(), "RECIPIENT_SHEET_SELECTED", currentUser, request.getSheetName());
+        return RecipientSheetColumnsResponse.builder()
+                .sheetName(request.getSheetName())
+                .columns(columns)
+                .build();
+    }
+
     @Override
     public EmailTemplateDetailResponse adoptLatestQueryVersion(Long templateId, String currentUser) {
         EmailTemplate template = getTemplateOrThrow(templateId);
@@ -214,9 +324,15 @@ public class EmailTemplateServiceImpl implements EmailTemplateService {
         }
         version.setHasMergeFieldConflict(anyBroken);
 
-        boolean mappingBroken = !isBlank(version.getRecipientEmailColumn()) && !validColumns.contains(version.getRecipientEmailColumn());
-        mappingBroken = mappingBroken || (!isBlank(version.getRecipientNameColumn()) && !validColumns.contains(version.getRecipientNameColumn()));
-        version.setHasRecipientMappingConflict(mappingBroken);
+        // FIX: same mode-gating as updateRecipients — only DATA_SOURCE_QUERY
+        // mode maps the recipient email/name directly to query columns; for
+        // CONTACT_DISTRIBUTION_LIST those come from the contact record
+        // instead (EM-9 AC), so there's nothing to re-check here on adopt.
+        if (version.getRecipientMode() == RecipientMode.DATA_SOURCE_QUERY) {
+            boolean mappingBroken = !isBlank(version.getRecipientEmailColumn()) && !validColumns.contains(version.getRecipientEmailColumn());
+            mappingBroken = mappingBroken || (!isBlank(version.getRecipientNameColumn()) && !validColumns.contains(version.getRecipientNameColumn()));
+            version.setHasRecipientMappingConflict(mappingBroken);
+        }
 
         version.setUpdatedBy(currentUser);
         versionRepository.save(version);
@@ -341,7 +457,21 @@ public class EmailTemplateServiceImpl implements EmailTemplateService {
         } else {
             versions = template.getActiveVersion() != null ? List.of(template.getActiveVersion()) : List.of();
         }
-        return versions.stream().map(this::toHistoryEntry).collect(Collectors.toList());
+
+        // FIX: toHistoryEntry previously re-ran findByTemplate_TemplateId...
+        // once per version (N+1). Fetch the template's change requests once
+        // and index by version id instead.
+        Map<Long, EmailTemplateChangeRequest> changeRequestsByVersionId =
+                changeRequestRepository.findByTemplate_TemplateIdOrderBySubmittedAtDesc(templateId).stream()
+                        .filter(cr -> cr.getTemplateVersion() != null)
+                        .collect(Collectors.toMap(
+                                cr -> cr.getTemplateVersion().getTemplateVersionId(),
+                                cr -> cr,
+                                (first, second) -> first));
+
+        return versions.stream()
+                .map(v -> toHistoryEntry(v, changeRequestsByVersionId.get(v.getTemplateVersionId())))
+                .collect(Collectors.toList());
     }
 
     @Override
@@ -632,6 +762,9 @@ public class EmailTemplateServiceImpl implements EmailTemplateService {
                 .recipientMode(source.getRecipientMode())
                 .recipientEmailColumn(source.getRecipientEmailColumn())
                 .recipientNameColumn(source.getRecipientNameColumn())
+                .recipientFileName(source.getRecipientFileName())
+                .recipientFileStoragePath(source.getRecipientFileStoragePath())
+                .recipientSheetName(source.getRecipientSheetName())
                 .status(VersionStatus.DRAFT)
                 .hasMergeFieldConflict(false)
                 .hasRecipientMappingConflict(false)
@@ -700,8 +833,22 @@ public class EmailTemplateServiceImpl implements EmailTemplateService {
                     .recipientMode(version.getRecipientMode())
                     .recipientEmailColumn(version.getRecipientEmailColumn())
                     .recipientNameColumn(version.getRecipientNameColumn())
+                    .recipientFileName(version.getRecipientFileName())
+                    .recipientSheetName(version.getRecipientSheetName())
                     .attachmentFileNames(version.getAttachments().stream()
                             .map(EmailTemplateAttachment::getFileName).collect(Collectors.toList()));
+
+            // FIX: Approval Comments (and, once decided, the reviewer's
+            // decision comments / rejection reason) live on the change
+            // request, not the version — were never being read back here,
+            // so the Preview-and-Submit / Template Details screens had
+            // nowhere to display what the submitter just typed.
+            changeRequestRepository.findByTemplateVersion_TemplateVersionId(version.getTemplateVersionId())
+                    .ifPresent(cr -> builder.approvalComments(cr.getReason())
+                            .decisionComments(cr.getDecisionComments())
+                            .rejectionReason(cr.getRejectionReason())
+                            .decidedBy(cr.getDecidedBy())
+                            .decidedAt(cr.getDecidedAt()));
         }
         return builder.build();
     }
@@ -725,13 +872,7 @@ public class EmailTemplateServiceImpl implements EmailTemplateService {
                 .build();
     }
 
-    private VersionHistoryEntryResponse toHistoryEntry(EmailTemplateVersion version) {
-        Optional<EmailTemplateChangeRequest> cr = changeRequestRepository
-                .findByTemplate_TemplateIdOrderBySubmittedAtDesc(version.getTemplate().getTemplateId()).stream()
-                .filter(c -> c.getTemplateVersion() != null
-                        && c.getTemplateVersion().getTemplateVersionId().equals(version.getTemplateVersionId()))
-                .findFirst();
-
+    private VersionHistoryEntryResponse toHistoryEntry(EmailTemplateVersion version, EmailTemplateChangeRequest cr) {
         VersionHistoryEntryResponse.VersionHistoryEntryResponseBuilder builder = VersionHistoryEntryResponse.builder()
                 .templateVersionId(version.getTemplateVersionId())
                 .versionNumber(version.getVersionNumber())
@@ -740,10 +881,15 @@ public class EmailTemplateServiceImpl implements EmailTemplateService {
                 .restoredFromVersionNumber(version.getRestoredFromVersion() != null
                         ? Long.valueOf(version.getRestoredFromVersion().getVersionNumber()) : null);
 
-        cr.ifPresent(c -> builder.submittedBy(c.getSubmittedBy())
-                .submittedAt(c.getSubmittedAt())
-                .decidedBy(c.getDecidedBy())
-                .decidedAt(c.getDecidedAt()));
+        if (cr != null) {
+            builder.submittedBy(cr.getSubmittedBy())
+                    .submittedAt(cr.getSubmittedAt())
+                    .approvalComments(cr.getReason())
+                    .decidedBy(cr.getDecidedBy())
+                    .decidedAt(cr.getDecidedAt())
+                    .decisionComments(cr.getDecisionComments())
+                    .rejectionReason(cr.getRejectionReason());
+        }
 
         return builder.build();
     }

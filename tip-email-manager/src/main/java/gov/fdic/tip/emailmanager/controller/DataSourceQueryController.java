@@ -121,4 +121,10 @@ public class DataSourceQueryController {
         service.deleteQuery(id);
         return ResponseEntity.noContent().build();
     }
+    
+    @GetMapping("/{id}/columns")
+    public ResponseEntity<List<String>> getQueryColumns(@PathVariable UUID id) {
+        List<String> columns = service.getQueryColumns(id);
+        return ResponseEntity.ok(columns);
+    }
 }

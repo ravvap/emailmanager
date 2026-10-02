@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 public interface EmailTemplateVersionRepository extends JpaRepository<EmailTemplateVersion, Long> {
 
@@ -15,7 +16,7 @@ public interface EmailTemplateVersionRepository extends JpaRepository<EmailTempl
 
     List<EmailTemplateVersion> findByStatus(VersionStatus status);
 
-    List<EmailTemplateVersion> findByDataSourceQueryId(Long dataSourceQueryId);
+    List<EmailTemplateVersion> findByDataSourceQueryId(UUID dataSourceQueryId);
 
     // EM-9 AC: "only one draft awaiting approval per template at a time"
     List<EmailTemplateVersion> findByTemplate_TemplateIdAndStatusIn(Long templateId, List<VersionStatus> statuses);

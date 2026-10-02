@@ -18,6 +18,9 @@ import gov.fdic.tip.emailmanager.repository.DataSourceQueryRepository;
 import net.sf.jsqlparser.parser.CCJSqlParserUtil;
 import net.sf.jsqlparser.statement.select.Select;
  
+import net.sf.jsqlparser.statement.select.SelectItem;
+import net.sf.jsqlparser.statement.select.PlainSelect;
+import net.sf.jsqlparser.statement.select.Select;
 
 /**
  * Service orchestrating governance workflows and strict validations for Data Source Queries.
@@ -212,4 +215,45 @@ public class DataSourceQueryService {
             throw new IllegalArgumentException("Invalid SQL syntax or unauthorized query format: " + e.getMessage());
         }
     }
+    
+    
+    /**
+     * Extracts the column names or aliases from a given data source query.
+     * 
+     * @param queryId The UUID of the DataSourceQuery entity.
+     * @return List of column names or aliases to be used as merge fields.
+     */
+    @Transactional(readOnly = true)
+    public List<String> getQueryColumns(UUID queryId) {
+        DataSourceQuery query = repository.findById(queryId)
+                .orElseThrow(() -> new IllegalArgumentException(AppConstants.MSG_QUERY_NOT_FOUND));
+
+        return extractColumnsFromSql(query.getSqlText());
+    }
+
+    /**
+     * Parses SQL using JSqlParser and returns the list of selected column names/aliases.
+     */
+    public List<String> extractColumnsFromSql(String sqlText) {
+        try {
+            net.sf.jsqlparser.statement.Statement statement = CCJSqlParserUtil.parse(sqlText);
+
+            if (!(statement instanceof Select)) {
+                throw new IllegalArgumentException("Query must be a valid SELECT statement.");
+            }
+
+            Select selectStatement = (Select) statement;
+            PlainSelect plainSelect = (PlainSelect) selectStatement.getSelectBody();
+
+            List<String> columns = new java.util.ArrayList<>();
+            for (SelectItem<?> item : plainSelect.getSelectItems()) {
+                columns.add(item.toString().trim());
+            }
+
+            return columns;
+        } catch (Exception e) {
+            throw new IllegalArgumentException("Failed to parse SQL columns: " + e.getMessage(), e);
+        }
+    }
+    
 }

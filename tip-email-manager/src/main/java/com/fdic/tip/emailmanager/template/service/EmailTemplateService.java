@@ -20,6 +20,12 @@ public interface EmailTemplateService {
 
     EmailTemplateDetailResponse addAttachment(Long templateId, MultipartFile file, String currentUser);
 
+    /** FILE_UPLOAD recipient mode, step 1: store the file, return its worksheet names. */
+    RecipientFileUploadResponse uploadRecipientFile(Long templateId, MultipartFile file, String currentUser);
+
+    /** FILE_UPLOAD recipient mode, step 2: select a worksheet, return its header row for column mapping. */
+    RecipientSheetColumnsResponse selectRecipientSheet(Long templateId, RecipientSheetSelectionRequest request, String currentUser);
+
     /** Adopt the latest approved data source query version onto the current draft, re-flagging any broken mappings (EM-9 AC). */
     EmailTemplateDetailResponse adoptLatestQueryVersion(Long templateId, String currentUser);
 

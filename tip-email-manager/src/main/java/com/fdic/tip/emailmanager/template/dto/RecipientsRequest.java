@@ -15,8 +15,13 @@ public class RecipientsRequest {
     @NotNull
     RecipientMode recipientMode;
 
-    String recipientEmailColumn;   // required for DATA_SOURCE_QUERY / FILE_UPLOAD modes
-    String recipientNameColumn;    // required only for query-driven personalized greeting
+    // Only meaningful (and validated) for DATA_SOURCE_QUERY mode, where
+    // these map directly to the pinned query's columns. FILE_UPLOAD will
+    // eventually map these to the uploaded file's header row instead —
+    // not yet implemented; ignored for CONTACT_DISTRIBUTION_LIST (recipient
+    // name comes from the contact record) and DEFINE_AT_SEND (no mapping yet).
+    String recipientEmailColumn;
+    String recipientNameColumn;
 
     List<Long> distributionListIds;
     List<Long> contactIds;

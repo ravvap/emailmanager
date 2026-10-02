@@ -70,6 +70,23 @@ public class EmailTemplateController {
         return ResponseEntity.ok(emailTemplateService.updateRecipients(templateId, request, currentUser));
     }
 
+    // ---- FILE_UPLOAD recipient mode ----
+    @PostMapping(value = "/{templateId}/recipients/file", consumes = "multipart/form-data")
+    public ResponseEntity<RecipientFileUploadResponse> uploadRecipientFile(
+            @PathVariable Long templateId,
+            @RequestParam("file") MultipartFile file,
+            @AuthenticationPrincipal String currentUser) {
+        return ResponseEntity.ok(emailTemplateService.uploadRecipientFile(templateId, file, currentUser));
+    }
+
+    @PostMapping("/{templateId}/recipients/file/sheet")
+    public ResponseEntity<RecipientSheetColumnsResponse> selectRecipientSheet(
+            @PathVariable Long templateId,
+            @Valid @RequestBody RecipientSheetSelectionRequest request,
+            @AuthenticationPrincipal String currentUser) {
+        return ResponseEntity.ok(emailTemplateService.selectRecipientSheet(templateId, request, currentUser));
+    }
+
     @PostMapping("/{templateId}/adopt-latest-query-version")
     public ResponseEntity<EmailTemplateDetailResponse> adoptLatestQueryVersion(
             @PathVariable Long templateId,

@@ -22,4 +22,8 @@ public interface EmailTemplateChangeRequestRepository extends JpaRepository<Emai
     Optional<EmailTemplateChangeRequest> findByTemplate_TemplateIdAndStatus(Long templateId, ChangeRequestStatus status);
 
     List<EmailTemplateChangeRequest> findByTemplate_TemplateIdOrderBySubmittedAtDesc(Long templateId);
+
+    // Single-version lookup for the Preview/Template Details screen (approval
+    // comments, decision comments, rejection reason for that one version).
+    Optional<EmailTemplateChangeRequest> findByTemplateVersion_TemplateVersionId(Long templateVersionId);
 }

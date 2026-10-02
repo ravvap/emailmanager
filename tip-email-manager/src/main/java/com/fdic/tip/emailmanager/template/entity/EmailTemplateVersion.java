@@ -8,6 +8,7 @@ import lombok.*;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 /**
  * A single versioned snapshot of a template's content. Pins to a specific
@@ -44,8 +45,12 @@ public class EmailTemplateVersion {
     @Column(name = "from_identity_id", nullable = false)
     private Long fromIdentityId;
 
-    @Column(name = "data_source_query_id", nullable = false)
-    private Long dataSourceQueryId;
+    // References data_source_query.asset_id (EM-1 schema) — the query
+    // lineage, not any one version row's own id — together with
+    // dataSourceQueryVersion below pinning this template to the exact
+    // row (asset_id, version) it was approved against.
+    @Column(name = "data_source_query_id", columnDefinition = "uuid", nullable = false)
+    private UUID dataSourceQueryId;
 
     @Column(name = "data_source_query_version", nullable = false)
     private Integer dataSourceQueryVersion;
@@ -75,6 +80,16 @@ public class EmailTemplateVersion {
 
     @Column(name = "recipient_name_column", length = 100)
     private String recipientNameColumn;
+
+    // ---- FILE_UPLOAD recipient mode only ----
+    @Column(name = "recipient_file_name", length = 255)
+    private String recipientFileName;
+
+    @Column(name = "recipient_file_storage_path", length = 500)
+    private String recipientFileStoragePath;
+
+    @Column(name = "recipient_sheet_name", length = 255)
+    private String recipientSheetName;
 
     // ---- Lifecycle ----
     @Enumerated(EnumType.STRING)
