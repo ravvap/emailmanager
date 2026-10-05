@@ -16,4 +16,11 @@ public final class RecipientFileConstants {
     public static final String MSG_NO_FILE_UPLOADED = "Upload a recipient file before selecting a sheet.";
     public static final String MSG_NO_SHEET_SELECTED = "Select a worksheet before mapping recipient columns.";
     public static final String MSG_EMPTY_SHEET = "The selected sheet has no header row.";
+    public static final String MSG_NO_FILE_CONTENT = "No recipient file content found for this template version.";
+
+    // Deliberately simple — this flags obviously malformed rows for the
+    // Preview screen's attention, it is not full RFC 5322 validation.
+    public static final String EMAIL_PATTERN = "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$";
+    public static final String VALIDATION_ERROR_MISSING_EMAIL = "missing email";
+    public static final String VALIDATION_ERROR_INVALID_EMAIL = "malformed email address";
 }

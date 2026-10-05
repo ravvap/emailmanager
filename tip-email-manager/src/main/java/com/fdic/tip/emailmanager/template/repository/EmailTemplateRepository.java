@@ -10,11 +10,19 @@ import java.util.Optional;
 
 public interface EmailTemplateRepository extends JpaRepository<EmailTemplate, Long> {
 
-    boolean existsByTemplateNameIgnoreCase(String templateName);
+    // FIX: all lookups now exclude soft-deleted rows — a deleted
+    // template's name is free to reuse (matches the DB's partial unique
+    // index, uq_email_template_name_active) and the template itself
+    // should behave as gone, not just differently-statused.
+    boolean existsByTemplateNameIgnoreCaseAndDeletedAtIsNull(String templateName);
 
-    Optional<EmailTemplate> findByTemplateNameIgnoreCase(String templateName);
+    Optional<EmailTemplate> findByTemplateNameIgnoreCaseAndDeletedAtIsNull(String templateName);
 
-    Page<EmailTemplate> findByStatus(TemplateStatus status, Pageable pageable);
+    Optional<EmailTemplate> findByTemplateIdAndDeletedAtIsNull(Long templateId);
 
-    Page<EmailTemplate> findByOwnerUserId(String ownerUserId, Pageable pageable);
+    Page<EmailTemplate> findByDeletedAtIsNull(Pageable pageable);
+
+    Page<EmailTemplate> findByStatusAndDeletedAtIsNull(TemplateStatus status, Pageable pageable);
+
+    Page<EmailTemplate> findByOwnerUserIdAndDeletedAtIsNull(String ownerUserId, Pageable pageable);
 }

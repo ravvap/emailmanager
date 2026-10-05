@@ -64,6 +64,15 @@ public interface EmailTemplateService {
     // ---- Ownership / lookup ----
     EmailTemplateDetailResponse reassignOwner(Long templateId, String newOwnerUserId, String currentUser);
 
+    /**
+     * Soft-deletes a template (deleted_by/deleted_at) — distinct from
+     * Retire: only permitted from DRAFT or RETIRED (never ACTIVE, never
+     * with a pending change request awaiting approval), and unlike
+     * Retire/Reactivate this is not itself a maker-checker action. The
+     * template's name becomes free to reuse once deleted.
+     */
+    void deleteTemplate(Long templateId, String currentUser);
+
     EmailTemplateDetailResponse getById(Long templateId);
 
     /** roles drives Analyst scoping: Analysts only see ACTIVE templates. */

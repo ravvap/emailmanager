@@ -45,6 +45,8 @@ public final class EmailTemplateConstants {
     public static final String MSG_WITHDRAW_NOT_ALLOWED = "Only the submitter, a Manager, or a TIP Administrator may withdraw this request.";
     public static final String MSG_ANALYST_HISTORY_RESTRICTED = "Analysts may only view the active version's history.";
     public static final String MSG_COMPARE_REQUIRES_HISTORY_ACCESS = "You do not have access to compare template versions.";
+    public static final String MSG_DELETE_NOT_ALLOWED_WHILE_ACTIVE = "An active template must be retired before it can be deleted.";
+    public static final String MSG_DELETE_BLOCKED_BY_PENDING_CHANGE = "This template has a pending change awaiting approval and cannot be deleted.";
 
     // ---- Allowed attachment extensions ----
     public static final String[] ALLOWED_ATTACHMENT_EXTENSIONS = {"docx", "xlsx"};

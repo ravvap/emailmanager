@@ -17,6 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.*;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 @Service
@@ -37,8 +38,8 @@ public class EmailTemplateServiceImpl implements EmailTemplateService {
     private final RichTextSanitizerPort richTextSanitizerPort;
     private final DistributionListDirectoryPort distributionListDirectoryPort;
     private final ContactDirectoryPort contactDirectoryPort;
-    private final RecipientFileStoragePort recipientFileStoragePort;
     private final RecipientFileParserPort recipientFileParserPort;
+    private final EmailTemplateFileRecipientRepository fileRecipientRepository;
 
     private static final List<VersionStatus> OPEN_VERSION_STATUSES = List.of(VersionStatus.DRAFT, VersionStatus.PENDING_APPROVAL);
 
@@ -47,7 +48,7 @@ public class EmailTemplateServiceImpl implements EmailTemplateService {
     // ===================================================================
     @Override
     public EmailTemplateDetailResponse createDraft(TemplateDetailsRequest request, String currentUser) {
-        if (templateRepository.existsByTemplateNameIgnoreCase(request.getTemplateName())) {
+        if (templateRepository.existsByTemplateNameIgnoreCaseAndDeletedAtIsNull(request.getTemplateName())) {
             throw new IllegalArgumentException(EmailTemplateConstants.MSG_TEMPLATE_NAME_DUPLICATE);
         }
         if (!dataSourceQueryPort.isAuthorized(currentUser, request.getDataSourceQueryId())) {
@@ -154,15 +155,14 @@ public class EmailTemplateServiceImpl implements EmailTemplateService {
             // row (via uploadRecipientFile/selectRecipientSheet, which must
             // run first) instead of being silently skipped.
             case FILE_UPLOAD -> {
-                if (isBlank(version.getRecipientFileName())) {
+                if (isBlank(version.getRecipientFileName()) || version.getRecipientFileContent() == null) {
                     throw new IllegalStateException(RecipientFileConstants.MSG_NO_FILE_UPLOADED);
                 }
                 if (isBlank(version.getRecipientSheetName())) {
                     throw new IllegalStateException(RecipientFileConstants.MSG_NO_SHEET_SELECTED);
                 }
-                byte[] content = recipientFileStoragePort.fetch(version.getRecipientFileStoragePath());
                 List<String> fileColumns = recipientFileParserPort.getColumnHeaders(
-                        content, version.getRecipientFileName(), version.getRecipientSheetName());
+                        version.getRecipientFileContent(), version.getRecipientFileName(), version.getRecipientSheetName());
                 boolean broken = !isBlank(request.getRecipientEmailColumn()) && !fileColumns.contains(request.getRecipientEmailColumn());
                 yield broken || (!isBlank(request.getRecipientNameColumn()) && !fileColumns.contains(request.getRecipientNameColumn()));
             }
@@ -204,8 +204,48 @@ public class EmailTemplateServiceImpl implements EmailTemplateService {
                             .build()));
         }
 
+        // Parse and persist actual recipient rows (name + email) out of the
+        // mapped sheet, so the send pipeline reads from this table instead
+        // of re-parsing recipient_file_content every time. Wholesale
+        // replace: cleared first regardless of mode/outcome, so a broken
+        // or incomplete mapping leaves none behind rather than stale ones.
+        fileRecipientRepository.deleteByTemplateVersion_TemplateVersionId(version.getTemplateVersionId());
+        if (request.getRecipientMode() == RecipientMode.FILE_UPLOAD && !mappingBroken
+                && !isBlank(request.getRecipientEmailColumn())) {
+            persistFileRecipientRows(version, request.getRecipientEmailColumn(), request.getRecipientNameColumn());
+        }
+
         audit(templateId, version.getTemplateVersionId(), "RECIPIENTS_UPDATED", currentUser, request.getRecipientMode().name());
         return toDetailResponse(template, version);
+    }
+
+    /** Parses every data row of the mapped sheet and persists it, flagging rows with a missing/malformed email. */
+    private void persistFileRecipientRows(EmailTemplateVersion version, String emailColumn, String nameColumn) {
+        List<RecipientFileRow> rows = recipientFileParserPort.getRecipientRows(
+                version.getRecipientFileContent(), version.getRecipientFileName(), version.getRecipientSheetName(),
+                emailColumn, nameColumn);
+
+        Pattern emailPattern = Pattern.compile(RecipientFileConstants.EMAIL_PATTERN);
+        for (RecipientFileRow row : rows) {
+            boolean valid = true;
+            String validationError = null;
+            if (isBlank(row.recipientEmail())) {
+                valid = false;
+                validationError = RecipientFileConstants.VALIDATION_ERROR_MISSING_EMAIL;
+            } else if (!emailPattern.matcher(row.recipientEmail()).matches()) {
+                valid = false;
+                validationError = RecipientFileConstants.VALIDATION_ERROR_INVALID_EMAIL;
+            }
+
+            fileRecipientRepository.save(EmailTemplateFileRecipient.builder()
+                    .templateVersion(version)
+                    .rowNumber(row.rowNumber())
+                    .recipientName(row.recipientName())
+                    .recipientEmail(row.recipientEmail())
+                    .isValid(valid)
+                    .validationError(validationError)
+                    .build());
+        }
     }
 
     @Override
@@ -256,19 +296,20 @@ public class EmailTemplateServiceImpl implements EmailTemplateService {
             throw new IllegalArgumentException(RecipientFileConstants.MSG_FILE_TYPE_NOT_ALLOWED);
         }
 
-        String storagePath = recipientFileStoragePort.storeAndScan(file);
-        byte[] content = recipientFileStoragePort.fetch(storagePath);
+        byte[] content = readBytes(file);
         List<String> sheetNames = recipientFileParserPort.listSheetNames(content, file.getOriginalFilename());
 
-        // A new file invalidates any previously selected sheet/column mapping.
+        // A new file invalidates any previously selected sheet/column
+        // mapping and any rows already parsed from the old file.
         version.setRecipientFileName(file.getOriginalFilename());
-        version.setRecipientFileStoragePath(storagePath);
+        version.setRecipientFileContent(content);
         version.setRecipientSheetName(null);
         version.setRecipientEmailColumn(null);
         version.setRecipientNameColumn(null);
         version.setHasRecipientMappingConflict(false);
         version.setUpdatedBy(currentUser);
         versionRepository.save(version);
+        fileRecipientRepository.deleteByTemplateVersion_TemplateVersionId(version.getTemplateVersionId());
 
         audit(templateId, version.getTemplateVersionId(), "RECIPIENT_FILE_UPLOADED", currentUser, file.getOriginalFilename());
         return RecipientFileUploadResponse.builder()
@@ -282,20 +323,22 @@ public class EmailTemplateServiceImpl implements EmailTemplateService {
         EmailTemplate template = getTemplateOrThrow(templateId);
         EmailTemplateVersion version = getEditableCurrentVersion(template);
 
-        if (isBlank(version.getRecipientFileName()) || isBlank(version.getRecipientFileStoragePath())) {
+        if (isBlank(version.getRecipientFileName()) || version.getRecipientFileContent() == null) {
             throw new IllegalStateException(RecipientFileConstants.MSG_NO_FILE_UPLOADED);
         }
 
-        byte[] content = recipientFileStoragePort.fetch(version.getRecipientFileStoragePath());
-        List<String> columns = recipientFileParserPort.getColumnHeaders(content, version.getRecipientFileName(), request.getSheetName());
+        List<String> columns = recipientFileParserPort.getColumnHeaders(
+                version.getRecipientFileContent(), version.getRecipientFileName(), request.getSheetName());
 
         version.setRecipientSheetName(request.getSheetName());
-        // Selecting a (new) sheet invalidates whatever column mapping was chosen against the previous one.
+        // Selecting a (new) sheet invalidates whatever column mapping (and
+        // parsed rows) existed against the previous one.
         version.setRecipientEmailColumn(null);
         version.setRecipientNameColumn(null);
         version.setHasRecipientMappingConflict(false);
         version.setUpdatedBy(currentUser);
         versionRepository.save(version);
+        fileRecipientRepository.deleteByTemplateVersion_TemplateVersionId(version.getTemplateVersionId());
 
         audit(templateId, version.getTemplateVersionId(), "RECIPIENT_SHEET_SELECTED", currentUser, request.getSheetName());
         return RecipientSheetColumnsResponse.builder()
@@ -643,6 +686,26 @@ public class EmailTemplateServiceImpl implements EmailTemplateService {
     }
 
     // ===================================================================
+    // Delete (soft) — distinct from Retire, not a maker-checker action
+    // ===================================================================
+    @Override
+    public void deleteTemplate(Long templateId, String currentUser) {
+        EmailTemplate template = getTemplateOrThrow(templateId);
+        if (template.getStatus() == TemplateStatus.ACTIVE) {
+            throw new IllegalStateException(EmailTemplateConstants.MSG_DELETE_NOT_ALLOWED_WHILE_ACTIVE);
+        }
+        if (changeRequestRepository.findByTemplate_TemplateIdAndStatus(templateId, ChangeRequestStatus.PENDING).isPresent()) {
+            throw new IllegalStateException(EmailTemplateConstants.MSG_DELETE_BLOCKED_BY_PENDING_CHANGE);
+        }
+
+        template.setDeletedBy(currentUser);
+        template.setDeletedAt(java.time.OffsetDateTime.now());
+        templateRepository.save(template);
+
+        audit(templateId, null, "DELETED", currentUser, null);
+    }
+
+    // ===================================================================
     // Ownership / lookup
     // ===================================================================
     @Override
@@ -667,8 +730,8 @@ public class EmailTemplateServiceImpl implements EmailTemplateService {
     @Transactional(readOnly = true)
     public Page<EmailTemplateSummaryResponse> list(Pageable pageable, Set<String> roles) {
         Page<EmailTemplate> page = hasHistoryAccess(roles)
-                ? templateRepository.findAll(pageable)
-                : templateRepository.findByStatus(TemplateStatus.ACTIVE, pageable);
+                ? templateRepository.findByDeletedAtIsNull(pageable)
+                : templateRepository.findByStatusAndDeletedAtIsNull(TemplateStatus.ACTIVE, pageable);
 
         return page.map(t -> EmailTemplateSummaryResponse.builder()
                 .templateId(t.getTemplateId())
@@ -685,7 +748,9 @@ public class EmailTemplateServiceImpl implements EmailTemplateService {
     // Helpers
     // -----------------------------------------------------------------
     private EmailTemplate getTemplateOrThrow(Long templateId) {
-        return templateRepository.findById(templateId)
+        // A soft-deleted template is treated as not-found, not as a
+        // differently-statused template every other method could still act on.
+        return templateRepository.findByTemplateIdAndDeletedAtIsNull(templateId)
                 .orElseThrow(() -> new EntityNotFoundException(EmailTemplateConstants.MSG_TEMPLATE_NOT_FOUND));
     }
 
@@ -735,6 +800,14 @@ public class EmailTemplateServiceImpl implements EmailTemplateService {
         return s == null || s.isBlank();
     }
 
+    private byte[] readBytes(MultipartFile file) {
+        try {
+            return file.getBytes();
+        } catch (java.io.IOException ex) {
+            throw new IllegalStateException("Could not read uploaded file.", ex);
+        }
+    }
+
     private String getExtension(String fileName) {
         if (fileName == null || !fileName.contains(".")) {
             return "";
@@ -763,7 +836,8 @@ public class EmailTemplateServiceImpl implements EmailTemplateService {
                 .recipientEmailColumn(source.getRecipientEmailColumn())
                 .recipientNameColumn(source.getRecipientNameColumn())
                 .recipientFileName(source.getRecipientFileName())
-                .recipientFileStoragePath(source.getRecipientFileStoragePath())
+                .recipientFileContent(source.getRecipientFileContent() != null
+                        ? Arrays.copyOf(source.getRecipientFileContent(), source.getRecipientFileContent().length) : null)
                 .recipientSheetName(source.getRecipientSheetName())
                 .status(VersionStatus.DRAFT)
                 .hasMergeFieldConflict(false)
@@ -801,6 +875,20 @@ public class EmailTemplateServiceImpl implements EmailTemplateService {
                     .contactId(sel.getContactId())
                     .build());
         }
+        // FILE_UPLOAD mode: carry the already-parsed recipient rows forward
+        // too — the file content/sheet/mapping were just copied above, so
+        // re-parsing here would be redundant; copy the result instead.
+        for (EmailTemplateFileRecipient row : fileRecipientRepository
+                .findByTemplateVersion_TemplateVersionIdOrderByRowNumber(source.getTemplateVersionId())) {
+            fileRecipientRepository.save(EmailTemplateFileRecipient.builder()
+                    .templateVersion(copy)
+                    .rowNumber(row.getRowNumber())
+                    .recipientName(row.getRecipientName())
+                    .recipientEmail(row.getRecipientEmail())
+                    .isValid(row.getIsValid())
+                    .validationError(row.getValidationError())
+                    .build());
+        }
         return copy;
     }
 
@@ -835,6 +923,12 @@ public class EmailTemplateServiceImpl implements EmailTemplateService {
                     .recipientNameColumn(version.getRecipientNameColumn())
                     .recipientFileName(version.getRecipientFileName())
                     .recipientSheetName(version.getRecipientSheetName())
+                    .recipientFileRowCount(version.getRecipientMode() == RecipientMode.FILE_UPLOAD
+                            ? fileRecipientRepository.findByTemplateVersion_TemplateVersionIdOrderByRowNumber(version.getTemplateVersionId()).size()
+                            : null)
+                    .recipientFileInvalidRowCount(version.getRecipientMode() == RecipientMode.FILE_UPLOAD
+                            ? (int) fileRecipientRepository.countByTemplateVersion_TemplateVersionIdAndIsValidFalse(version.getTemplateVersionId())
+                            : null)
                     .attachmentFileNames(version.getAttachments().stream()
                             .map(EmailTemplateAttachment::getFileName).collect(Collectors.toList()));
 

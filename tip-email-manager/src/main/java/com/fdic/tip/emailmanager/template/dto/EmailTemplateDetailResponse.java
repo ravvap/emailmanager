@@ -41,6 +41,8 @@ public class EmailTemplateDetailResponse {
     // "mapped file column" fields for this mode.
     String recipientFileName;
     String recipientSheetName;
+    Integer recipientFileRowCount;
+    Integer recipientFileInvalidRowCount;
 
     List<String> attachmentFileNames;
     List<String> selectedRecipientNames;

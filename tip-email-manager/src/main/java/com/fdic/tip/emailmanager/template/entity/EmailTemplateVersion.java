@@ -4,6 +4,8 @@ import com.fdic.tip.emailmanager.template.enums.RecipientMode;
 import com.fdic.tip.emailmanager.template.enums.VersionStatus;
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
@@ -82,11 +84,17 @@ public class EmailTemplateVersion {
     private String recipientNameColumn;
 
     // ---- FILE_UPLOAD recipient mode only ----
+    // Stored directly in this row (not an external blob store) — no
+    // virus scan on this specific upload; it's parsed into
+    // email_template_file_recipient rows, never executed or served back
+    // as a download.
     @Column(name = "recipient_file_name", length = 255)
     private String recipientFileName;
 
-    @Column(name = "recipient_file_storage_path", length = 500)
-    private String recipientFileStoragePath;
+    @Lob
+    @JdbcTypeCode(SqlTypes.VARBINARY)
+    @Column(name = "recipient_file_content")
+    private byte[] recipientFileContent;
 
     @Column(name = "recipient_sheet_name", length = 255)
     private String recipientSheetName;

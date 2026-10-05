@@ -2,7 +2,9 @@ package com.fdic.tip.emailmanager.template.adapter;
 
 import com.fdic.tip.emailmanager.common.constants.RecipientFileConstants;
 import com.fdic.tip.emailmanager.template.service.RecipientFileParserPort;
+import com.fdic.tip.emailmanager.template.service.RecipientFileRow;
 import org.apache.poi.ss.usermodel.Cell;
+import org.apache.poi.ss.usermodel.CellType;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
@@ -70,6 +72,104 @@ public class RecipientFileParserPortImpl implements RecipientFileParserPort {
         } catch (IOException ex) {
             throw new UncheckedIOException(ex);
         }
+    }
+
+    @Override
+    public List<RecipientFileRow> getRecipientRows(byte[] content, String fileName, String sheetName,
+                                                     String emailColumn, String nameColumn) {
+        if (isCsv(fileName)) {
+            return parseCsvRows(content, emailColumn, nameColumn);
+        }
+        try (Workbook workbook = new XSSFWorkbook(new ByteArrayInputStream(content))) {
+            Sheet sheet = workbook.getSheet(sheetName);
+            if (sheet == null) {
+                throw new IllegalArgumentException(RecipientFileConstants.MSG_SHEET_NOT_FOUND);
+            }
+            Row headerRow = sheet.getRow(sheet.getFirstRowNum());
+            if (headerRow == null) {
+                throw new IllegalStateException(RecipientFileConstants.MSG_EMPTY_SHEET);
+            }
+            int emailColIndex = findColumnIndex(headerRow, emailColumn);
+            int nameColIndex = findColumnIndex(headerRow, nameColumn);
+
+            List<RecipientFileRow> rows = new ArrayList<>();
+            int rowNumber = 0;
+            for (int r = sheet.getFirstRowNum() + 1; r <= sheet.getLastRowNum(); r++) {
+                Row dataRow = sheet.getRow(r);
+                if (dataRow == null || isBlankRow(dataRow)) {
+                    continue;
+                }
+                rowNumber++;
+                String email = emailColIndex >= 0 ? getCellText(dataRow.getCell(emailColIndex)) : null;
+                String name = nameColIndex >= 0 ? getCellText(dataRow.getCell(nameColIndex)) : null;
+                rows.add(new RecipientFileRow(rowNumber, name, email));
+            }
+            return rows;
+        } catch (IOException ex) {
+            throw new UncheckedIOException(ex);
+        }
+    }
+
+    private int findColumnIndex(Row headerRow, String columnName) {
+        if (columnName == null || columnName.isBlank()) {
+            return -1;
+        }
+        for (Cell cell : headerRow) {
+            if (columnName.equals(cell.getStringCellValue())) {
+                return cell.getColumnIndex();
+            }
+        }
+        return -1;
+    }
+
+    private boolean isBlankRow(Row row) {
+        for (Cell cell : row) {
+            if (cell.getCellType() != CellType.BLANK && !getCellText(cell).isBlank()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private String getCellText(Cell cell) {
+        if (cell == null) {
+            return "";
+        }
+        return switch (cell.getCellType()) {
+            case STRING -> cell.getStringCellValue().trim();
+            case NUMERIC -> String.valueOf(cell.getNumericCellValue());
+            case BOOLEAN -> String.valueOf(cell.getBooleanCellValue());
+            case FORMULA -> cell.getCellFormula();
+            default -> "";
+        };
+    }
+
+    private List<RecipientFileRow> parseCsvRows(byte[] content, String emailColumn, String nameColumn) {
+        String text = new String(content, StandardCharsets.UTF_8);
+        String[] lines = text.split("\\r?\\n");
+        if (lines.length == 0 || lines[0].isBlank()) {
+            throw new IllegalStateException(RecipientFileConstants.MSG_EMPTY_SHEET);
+        }
+        List<String> headers = new ArrayList<>();
+        for (String column : lines[0].split(",")) {
+            headers.add(column.trim());
+        }
+        int emailColIndex = headers.indexOf(emailColumn);
+        int nameColIndex = headers.indexOf(nameColumn);
+
+        List<RecipientFileRow> rows = new ArrayList<>();
+        int rowNumber = 0;
+        for (int i = 1; i < lines.length; i++) {
+            if (lines[i].isBlank()) {
+                continue;
+            }
+            rowNumber++;
+            String[] values = lines[i].split(",", -1);
+            String email = (emailColIndex >= 0 && emailColIndex < values.length) ? values[emailColIndex].trim() : null;
+            String name = (nameColIndex >= 0 && nameColIndex < values.length) ? values[nameColIndex].trim() : null;
+            rows.add(new RecipientFileRow(rowNumber, name, email));
+        }
+        return rows;
     }
 
     private boolean isCsv(String fileName) {

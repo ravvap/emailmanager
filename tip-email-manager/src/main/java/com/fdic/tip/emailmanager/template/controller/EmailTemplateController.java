@@ -184,6 +184,14 @@ public class EmailTemplateController {
     }
 
     // ---- Ownership / lookup ----
+    @DeleteMapping("/{templateId}")
+    public ResponseEntity<Void> deleteTemplate(
+            @PathVariable Long templateId,
+            @AuthenticationPrincipal String currentUser) {
+        emailTemplateService.deleteTemplate(templateId, currentUser);
+        return ResponseEntity.noContent().build();
+    }
+
     @PostMapping("/{templateId}/owner")
     public ResponseEntity<EmailTemplateDetailResponse> reassignOwner(
             @PathVariable Long templateId,

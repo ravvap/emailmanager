@@ -12,8 +12,7 @@ import java.time.OffsetDateTime;
  * version (active_version_id). Content itself lives in EmailTemplateVersion.
  */
 @Entity
-@Table(name = "email_template", schema = "txn",
-        uniqueConstraints = @UniqueConstraint(name = "uq_email_template_name", columnNames = "template_name"))
+@Table(name = "email_template", schema = "txn")
 @Getter
 @Setter
 @NoArgsConstructor
@@ -55,6 +54,12 @@ public class EmailTemplate {
 
     @Column(name = "updated_at", nullable = false)
     private OffsetDateTime updatedAt;
+
+    @Column(name = "deleted_by", length = 100)
+    private String deletedBy;
+
+    @Column(name = "deleted_at")
+    private OffsetDateTime deletedAt;
 
     @PrePersist
     protected void onCreate() {
