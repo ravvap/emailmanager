@@ -396,6 +396,12 @@ public class EmailTemplateServiceImpl implements EmailTemplateService {
         if (Boolean.TRUE.equals(version.getHasRecipientMappingConflict())) {
             throw new IllegalStateException(EmailTemplateConstants.MSG_MERGE_FIELD_CONFLICT);
         }
+        // Belt-and-suspenders alongside @NotBlank on the DTO — same
+        // pattern as the rest of this method's validation, not relying on
+        // bean validation alone.
+        if (isBlank(request.getComments())) {
+            throw new IllegalArgumentException(EmailTemplateConstants.MSG_APPROVAL_COMMENTS_REQUIRED);
+        }
 
         version.setStatus(VersionStatus.PENDING_APPROVAL);
         version.setUpdatedBy(currentUser);

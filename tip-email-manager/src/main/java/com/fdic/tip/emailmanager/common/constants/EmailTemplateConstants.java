@@ -30,6 +30,7 @@ public final class EmailTemplateConstants {
     public static final String MSG_ATTACHMENT_TYPE_NOT_ALLOWED = "Attachment file type is not permitted.";
     public static final String MSG_ALREADY_PENDING_APPROVAL = "This template version is already pending approval.";
     public static final String MSG_SUBMIT_SUCCESS = "Template submitted for approval.";
+    public static final String MSG_APPROVAL_COMMENTS_REQUIRED = "Approval comments are required to submit for approval.";
     public static final String MSG_APPROVE_SUCCESS = "Template version approved and is now active.";
     public static final String MSG_REJECT_SUCCESS = "Template version rejected.";
 

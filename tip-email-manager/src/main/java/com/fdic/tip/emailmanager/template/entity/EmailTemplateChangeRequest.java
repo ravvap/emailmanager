@@ -49,6 +49,11 @@ public class EmailTemplateChangeRequest {
     @Column(name = "status", length = 20, nullable = false)
     private ChangeRequestStatus status;
 
+    // Required for NEW_TEMPLATE/EDIT (the Preview-and-Submit screen's
+    // Approval Comments — enforced in SubmitForApprovalRequest/service,
+    // not nullable=false here since this column is shared); optional for
+    // RETIRE/REACTIVATE per EM-10 AC ("with an optional reason"); unused
+    // (null) for RESTORE, which doesn't collect one.
     @Column(name = "reason", length = 500)
     private String reason;
 
