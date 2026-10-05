@@ -1,0 +1,5814 @@
+{
+  "info": {
+    "_postman_id": "a0091255-ec49-46c9-9d41-37604cde305f",
+    "name": "TIP Email Manager - Email Templates (EM-8 to EM-13)",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "End-to-end tests for template authoring, edit, retire/reactivate, history/compare, restore, delete and maker-checker approval.\n\nRun the folders in order with the Collection Runner (they share state). Needs four users: maker, checker (Sr. Analyst/Manager), analyst, manager - set their JWTs in the environment.\nThe maker and checker MUST be different users (self-approval is blocked). Upload steps use files from postman/sample-files; set Postman's working directory to that folder."
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "if (!pm.collectionVariables.get('runId')) { pm.collectionVariables.set('runId', Date.now()); }"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "A. Author new template (EM-8) and approve (EM-13)",
+      "item": [
+        {
+          "name": "A1 Create draft (maker)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"templateName\": \"PM-{{runId}}-A\",\n  \"fromIdentityId\": {{fromIdentityId}},\n  \"dataSourceQueryId\": \"{{dataSourceQueryId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', () => pm.response.to.have.status(201));",
+                  "const j = pm.response.json();",
+                  "pm.test('version 1 is a DRAFT', () => { pm.expect(j.versionNumber).to.eql(1); pm.expect(j.versionStatus).to.eql('DRAFT'); });",
+                  "pm.test('template is DRAFT', () => pm.expect(j.templateStatus).to.eql('DRAFT'));",
+                  "pm.test('query pinned to a version', () => pm.expect(j.dataSourceQueryVersion).to.be.a('number'));",
+                  "pm.collectionVariables.set('tid', j.templateId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "A2 Duplicate template name -> 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"templateName\": \"pm-{{runId}}-a\",\n  \"fromIdentityId\": {{fromIdentityId}},\n  \"dataSourceQueryId\": \"{{dataSourceQueryId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Name uniqueness is case-insensitive among non-deleted templates."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('error body has a message', () => pm.expect(pm.response.json().message).to.be.a('string'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "A3 Content with a merge field that is not a query column -> conflict flagged",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/content",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "content"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"subject\": \"Action needed: Q3 filing due\",\n  \"bodyHtml\": \"<p>Dear {{full_name}},</p>\",\n  \"mergeFields\": [\n    {\n      \"placeholderName\": \"x\",\n      \"sourceColumn\": \"no_such_column_xyz\",\n      \"fieldLocation\": \"BODY\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('hasMergeFieldConflict is true', () => pm.expect(j.hasMergeFieldConflict).to.eql(true));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "A4 Submit blocked by the merge-field conflict -> 409",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/submit",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "submit"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comments\": \"Trying to submit with a broken merge field\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 409', () => pm.response.to.have.status(409));",
+                  "pm.test('error body has a message', () => pm.expect(pm.response.json().message).to.be.a('string'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "A5 Content (valid merge field; script/onclick must be stripped)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/content",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "content"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"subject\": \"Action needed: Q3 filing due\",\n  \"bodyHtml\": \"<h1>Quarterly Filing Reminder</h1><p>Dear {{full_name}},</p><p>Your Q3 filing is due. <a href=\\\"https://www.fdic.gov\\\">FDIC</a></p><table><tr><th>Item</th><th>Amount</th></tr><tr><td>A</td><td>1</td></tr></table><script>alert(1)</script><p onclick=\\\"steal()\\\">Thanks</p>\",\n  \"mergeFields\": [\n    {\n      \"placeholderName\": \"full_name\",\n      \"sourceColumn\": \"{{mergeColumn}}\",\n      \"fieldLocation\": \"BODY\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('conflict cleared', () => pm.expect(j.hasMergeFieldConflict).to.eql(false));",
+                  "pm.test('<script> removed by sanitizer', () => pm.expect(j.bodyHtml).to.not.include('<script'));",
+                  "pm.test('onclick removed by sanitizer', () => pm.expect(j.bodyHtml).to.not.include('onclick'));",
+                  "pm.test('allowed structure kept (heading, table, link)', () => { pm.expect(j.bodyHtml).to.include('<h1>'); pm.expect(j.bodyHtml).to.include('<table'); pm.expect(j.bodyHtml).to.include('href'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "A6 Subject over 255 chars -> 400",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/content",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "content"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"subject\": \"{{longSubject}}\",\n  \"bodyHtml\": \"<p>x</p>\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('longSubject', 'x'.repeat(256));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('error body has a message', () => pm.expect(pm.response.json().message).to.be.a('string'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "A7 Add attachment (.docx, stored in DB)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/attachments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "attachments"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "sample_attachment.docx"
+                }
+              ]
+            },
+            "description": "Select postman/sample-files/sample_attachment.docx (set Postman's working directory to the sample-files folder)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('attachment listed', () => pm.expect(j.attachmentFileNames).to.include('sample_attachment.docx'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "A8 Attachment with disallowed extension (.exe) -> 400",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/attachments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "attachments"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "bad_attachment.exe"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('error body has a message', () => pm.expect(pm.response.json().message).to.be.a('string'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "A9 Recipients CONTACT_DISTRIBUTION_LIST with unknown ids -> 400",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/recipients",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "recipients"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"recipientMode\": \"CONTACT_DISTRIBUTION_LIST\",\n  \"distributionListIds\": [\n    999999999\n  ],\n  \"contactIds\": [\n    999999998\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Validated against the existing distribution-list / contacts endpoints."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('error body has a message', () => pm.expect(pm.response.json().message).to.be.a('string'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "A10 Recipients CONTACT_DISTRIBUTION_LIST (valid ids)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/recipients",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "recipients"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"recipientMode\": \"CONTACT_DISTRIBUTION_LIST\",\n  \"distributionListIds\": [\n    {{distListId}}\n  ],\n  \"contactIds\": [\n    {{contactId}}\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('mode saved', () => pm.expect(j.recipientMode).to.eql('CONTACT_DISTRIBUTION_LIST'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "A11 Recipients DATA_SOURCE_QUERY with a column the query doesn't return",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/recipients",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "recipients"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"recipientMode\": \"DATA_SOURCE_QUERY\",\n  \"recipientEmailColumn\": \"no_such_email_col\",\n  \"recipientNameColumn\": \"{{nameColumn}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "A12 Submit blocked by recipient-mapping conflict -> 409",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/submit",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "submit"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comments\": \"Should be blocked\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 409', () => pm.response.to.have.status(409));",
+                  "pm.test('error body has a message', () => pm.expect(pm.response.json().message).to.be.a('string'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "A13 Recipients DATA_SOURCE_QUERY (valid columns)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/recipients",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "recipients"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"recipientMode\": \"DATA_SOURCE_QUERY\",\n  \"recipientEmailColumn\": \"{{emailColumn}}\",\n  \"recipientNameColumn\": \"{{nameColumn}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('mapping saved', () => pm.expect(j.recipientEmailColumn).to.eql(pm.environment.get('emailColumn') || pm.collectionVariables.get('emailColumn')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "A14 Recipients DEFINE_AT_SEND",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/recipients",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "recipients"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"recipientMode\": \"DEFINE_AT_SEND\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('mode saved', () => pm.expect(j.recipientMode).to.eql('DEFINE_AT_SEND'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "A15 FILE_UPLOAD: select sheet before uploading a file -> 409",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/recipients/file/sheet",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "recipients",
+                "file",
+                "sheet"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sheetName\": \"Recipients\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 409', () => pm.response.to.have.status(409));",
+                  "pm.test('error body has a message', () => pm.expect(pm.response.json().message).to.be.a('string'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "A16 FILE_UPLOAD: upload with disallowed type (.exe) -> 400",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/recipients/file",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "recipients",
+                "file"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "bad_attachment.exe"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('error body has a message', () => pm.expect(pm.response.json().message).to.be.a('string'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "A17 FILE_UPLOAD: upload recipients workbook (.xlsx)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/recipients/file",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "recipients",
+                "file"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "sample_recipients.xlsx"
+                }
+              ]
+            },
+            "description": "No virus scan - the file is stored in-row (BYTEA) and parsed."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('sheet names returned', () => pm.expect(j.sheetNames).to.include.members(['Recipients', 'Archive']));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "A18 FILE_UPLOAD: select a sheet that doesn't exist -> 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/recipients/file/sheet",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "recipients",
+                "file",
+                "sheet"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sheetName\": \"Nope\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('error body has a message', () => pm.expect(pm.response.json().message).to.be.a('string'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "A19 FILE_UPLOAD: select sheet 'Recipients' -> header row",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/recipients/file/sheet",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "recipients",
+                "file",
+                "sheet"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sheetName\": \"Recipients\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('header columns returned', () => pm.expect(j.columns).to.include.members(['Recipient Name', 'Recipient Email', 'Region']));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "A20 FILE_UPLOAD: map a column that isn't in the sheet",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/recipients",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "recipients"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"recipientMode\": \"FILE_UPLOAD\",\n  \"recipientEmailColumn\": \"Nope\",\n  \"recipientNameColumn\": \"Recipient Name\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "A21 Submit blocked by file-mapping conflict -> 409",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/submit",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "submit"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comments\": \"Should be blocked\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 409', () => pm.response.to.have.status(409));",
+                  "pm.test('error body has a message', () => pm.expect(pm.response.json().message).to.be.a('string'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "A22 FILE_UPLOAD: valid mapping -> rows parsed and persisted",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/recipients",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "recipients"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"recipientMode\": \"FILE_UPLOAD\",\n  \"recipientEmailColumn\": \"Recipient Email\",\n  \"recipientNameColumn\": \"Recipient Name\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('file/sheet echoed', () => { pm.expect(j.recipientFileName).to.eql('sample_recipients.xlsx'); pm.expect(j.recipientSheetName).to.eql('Recipients'); });",
+                  "pm.test('5 data rows parsed', () => pm.expect(j.recipientFileRowCount).to.eql(5));",
+                  "pm.test('2 invalid rows flagged (missing + malformed email)', () => pm.expect(j.recipientFileInvalidRowCount).to.eql(2));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "A23 Submit with blank Approval Comments -> 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/submit",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "submit"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comments\": \"   \"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('error body has a message', () => pm.expect(pm.response.json().message).to.be.a('string'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "A24 Submit with Approval Comments over 500 chars -> 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/submit",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "submit"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comments\": \"{{longComment}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('longComment', 'c'.repeat(501));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('error body has a message', () => pm.expect(pm.response.json().message).to.be.a('string'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "A25 Submit for approval (maker)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/submit",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "submit"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comments\": \"Q3 reminder, ready for review\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('version is PENDING_APPROVAL', () => pm.expect(j.versionStatus).to.eql('PENDING_APPROVAL'));",
+                  "pm.test('Approval Comments echoed back', () => pm.expect(j.approvalComments).to.eql('Q3 reminder, ready for review'));",
+                  "pm.test('template stays DRAFT until approved', () => pm.expect(j.templateStatus).to.eql('DRAFT'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "A26 Edit content while pending -> 409",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/content",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "content"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"subject\": \"Should not save\",\n  \"bodyHtml\": \"<h1>Quarterly Filing Reminder</h1><p>Dear {{full_name}},</p><p>Your Q3 filing is due. <a href=\\\"https://www.fdic.gov\\\">FDIC</a></p><table><tr><th>Item</th><th>Amount</th></tr><tr><td>A</td><td>1</td></tr></table><script>alert(1)</script><p onclick=\\\"steal()\\\">Thanks</p>\",\n  \"mergeFields\": [\n    {\n      \"placeholderName\": \"full_name\",\n      \"sourceColumn\": \"{{mergeColumn}}\",\n      \"fieldLocation\": \"BODY\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 409', () => pm.response.to.have.status(409));",
+                  "pm.test('error body has a message', () => pm.expect(pm.response.json().message).to.be.a('string'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "A27 Submit again while pending -> 409",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/submit",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "submit"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comments\": \"duplicate\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 409', () => pm.response.to.have.status(409));",
+                  "pm.test('error body has a message', () => pm.expect(pm.response.json().message).to.be.a('string'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Approval queue filtered by NEW_TEMPLATE (checker)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/change-requests?changeType=NEW_TEMPLATE&size=200&sort=submittedAt,desc",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "change-requests"
+              ],
+              "query": [
+                {
+                  "key": "changeType",
+                  "value": "NEW_TEMPLATE"
+                },
+                {
+                  "key": "size",
+                  "value": "200"
+                },
+                {
+                  "key": "sort",
+                  "value": "submittedAt,desc"
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{checkerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "const hit = j.content.find(c => String(c.templateId) === String(pm.collectionVariables.get('tid')) && c.changeType === 'NEW_TEMPLATE');",
+                  "pm.test('pending NEW_TEMPLATE request for this template is in the queue', () => pm.expect(hit).to.exist);",
+                  "pm.test('it is PENDING', () => pm.expect(hit.status).to.eql('PENDING'));",
+                  "pm.collectionVariables.set('crId', hit.changeRequestId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "A29 Maker approves their own submission -> 403 (separation of duties)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/change-requests/{{crId}}/approve",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "change-requests",
+                "{{crId}}",
+                "approve"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comments\": \"Reviewed - looks good\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 403', () => pm.response.to.have.status(403));",
+                  "pm.test('error body has a message', () => pm.expect(pm.response.json().message).to.be.a('string'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "A30 Analyst approves -> 403 (role gate)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/change-requests/{{crId}}/approve",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "change-requests",
+                "{{crId}}",
+                "approve"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{analystToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comments\": \"Reviewed - looks good\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Enforced by your SecurityFilterChain URL rules (approvers: TIP Admin / Sr. Analyst / Manager). Not part of this module's code - if your local profile permits all requests this will return 200/403 from the self-approval rule instead."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 403', () => pm.response.to.have.status(403));",
+                  "pm.test('error body has a message', () => pm.expect(pm.response.json().message).to.be.a('string'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "A31 Checker approves",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/change-requests/{{crId}}/approve",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "change-requests",
+                "{{crId}}",
+                "approve"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{checkerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comments\": \"Reviewed - looks good\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('APPROVED', () => pm.expect(j.status).to.eql('APPROVED'));",
+                  "pm.test('decided by someone else', () => pm.expect(j.decidedBy).to.not.eql(j.submittedBy));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "A32 Approve again -> 409 (no longer pending)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/change-requests/{{crId}}/approve",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "change-requests",
+                "{{crId}}",
+                "approve"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{checkerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comments\": \"Reviewed - looks good\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 409', () => pm.response.to.have.status(409));",
+                  "pm.test('error body has a message', () => pm.expect(pm.response.json().message).to.be.a('string'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "A33 Template is now ACTIVE (v1)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('template ACTIVE', () => pm.expect(j.templateStatus).to.eql('ACTIVE'));",
+                  "pm.test('v1 ACTIVE', () => { pm.expect(j.versionNumber).to.eql(1); pm.expect(j.versionStatus).to.eql('ACTIVE'); });",
+                  "pm.test('decision comments visible', () => pm.expect(j.decisionComments).to.eql('Reviewed - looks good'));",
+                  "pm.collectionVariables.set('v1VersionId', j.templateVersionId);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "B. Edit existing template (EM-9), withdraw / reject / approve, history + compare (EM-11)",
+      "item": [
+        {
+          "name": "B1 Start edit -> v2 draft pre-filled from v1",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/edit",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "edit"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('v2 DRAFT', () => { pm.expect(j.versionNumber).to.eql(2); pm.expect(j.versionStatus).to.eql('DRAFT'); });",
+                  "pm.test('subject carried over', () => pm.expect(j.subject).to.eql('Action needed: Q3 filing due'));",
+                  "pm.test('attachment carried over', () => pm.expect(j.attachmentFileNames).to.include('sample_attachment.docx'));",
+                  "pm.test('recipient file + parsed rows carried over', () => { pm.expect(j.recipientFileName).to.eql('sample_recipients.xlsx'); pm.expect(j.recipientFileRowCount).to.eql(5); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "B2 Start edit again while a draft is open -> 409",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/edit",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "edit"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 409', () => pm.response.to.have.status(409));",
+                  "pm.test('error body has a message', () => pm.expect(pm.response.json().message).to.be.a('string'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "B3 Adopt latest approved query version",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/adopt-latest-query-version",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "adopt-latest-query-version"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('no conflicts after adopt (assuming same columns)', () => pm.expect(j.hasMergeFieldConflict).to.eql(false));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "B4 Edit content (v2)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/content",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "content"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"subject\": \"EDITED v2: Q3 filing due\",\n  \"bodyHtml\": \"<h1>Quarterly Filing Reminder</h1><p>Dear {{full_name}},</p><p>Your Q3 filing is due. <a href=\\\"https://www.fdic.gov\\\">FDIC</a></p><table><tr><th>Item</th><th>Amount</th></tr><tr><td>A</td><td>1</td></tr></table><script>alert(1)</script><p onclick=\\\"steal()\\\">Thanks</p>\",\n  \"mergeFields\": [\n    {\n      \"placeholderName\": \"full_name\",\n      \"sourceColumn\": \"{{mergeColumn}}\",\n      \"fieldLocation\": \"BODY\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('subject updated', () => pm.expect(j.subject).to.eql('EDITED v2: Q3 filing due'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "B5 Submit v2",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/submit",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "submit"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comments\": \"Edit v2 - new wording\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('PENDING_APPROVAL', () => pm.expect(j.versionStatus).to.eql('PENDING_APPROVAL'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "B5a While v2 pending, v1 keeps serving as the active version",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/versions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "versions"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{checkerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "const byNo = Object.fromEntries(j.map(v => [v.versionNumber, v.status]));",
+                  "pm.test('v1 ACTIVE, v2 PENDING_APPROVAL', () => { pm.expect(byNo[1]).to.eql('ACTIVE'); pm.expect(byNo[2]).to.eql('PENDING_APPROVAL'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Approval queue filtered by EDIT (checker)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/change-requests?changeType=EDIT&size=200&sort=submittedAt,desc",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "change-requests"
+              ],
+              "query": [
+                {
+                  "key": "changeType",
+                  "value": "EDIT"
+                },
+                {
+                  "key": "size",
+                  "value": "200"
+                },
+                {
+                  "key": "sort",
+                  "value": "submittedAt,desc"
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{checkerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "const hit = j.content.find(c => String(c.templateId) === String(pm.collectionVariables.get('tid')) && c.changeType === 'EDIT');",
+                  "pm.test('pending EDIT request for this template is in the queue', () => pm.expect(hit).to.exist);",
+                  "pm.test('it is PENDING', () => pm.expect(hit.status).to.eql('PENDING'));",
+                  "pm.collectionVariables.set('crId', hit.changeRequestId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "B7 Submitter withdraws v2",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/change-requests/{{crId}}/withdraw",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "change-requests",
+                "{{crId}}",
+                "withdraw"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('WITHDRAWN', () => pm.expect(j.status).to.eql('WITHDRAWN'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "B8 Start edit -> v3 (withdrawn draft doesn't block a new one)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/edit",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "edit"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('v3', () => pm.expect(j.versionNumber).to.eql(3));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "B9 Edit content (v3)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/content",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "content"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"subject\": \"EDITED v3: rejected wording\",\n  \"bodyHtml\": \"<h1>Quarterly Filing Reminder</h1><p>Dear {{full_name}},</p><p>Your Q3 filing is due. <a href=\\\"https://www.fdic.gov\\\">FDIC</a></p><table><tr><th>Item</th><th>Amount</th></tr><tr><td>A</td><td>1</td></tr></table><script>alert(1)</script><p onclick=\\\"steal()\\\">Thanks</p>\",\n  \"mergeFields\": [\n    {\n      \"placeholderName\": \"full_name\",\n      \"sourceColumn\": \"{{mergeColumn}}\",\n      \"fieldLocation\": \"BODY\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "B10 Submit v3",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/submit",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "submit"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comments\": \"Edit v3\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Approval queue filtered by EDIT (checker)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/change-requests?changeType=EDIT&size=200&sort=submittedAt,desc",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "change-requests"
+              ],
+              "query": [
+                {
+                  "key": "changeType",
+                  "value": "EDIT"
+                },
+                {
+                  "key": "size",
+                  "value": "200"
+                },
+                {
+                  "key": "sort",
+                  "value": "submittedAt,desc"
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{checkerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "const hit = j.content.find(c => String(c.templateId) === String(pm.collectionVariables.get('tid')) && c.changeType === 'EDIT');",
+                  "pm.test('pending EDIT request for this template is in the queue', () => pm.expect(hit).to.exist);",
+                  "pm.test('it is PENDING', () => pm.expect(hit.status).to.eql('PENDING'));",
+                  "pm.collectionVariables.set('crId', hit.changeRequestId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "B12 Reject without a reason -> 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/change-requests/{{crId}}/reject",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "change-requests",
+                "{{crId}}",
+                "reject"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{checkerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comments\": \"no reason given\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('error body has a message', () => pm.expect(pm.response.json().message).to.be.a('string'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "B13 Reject v3 with a reason",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/change-requests/{{crId}}/reject",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "change-requests",
+                "{{crId}}",
+                "reject"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{checkerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"rejectionReason\": \"Wording is unclear\",\n  \"comments\": \"please revise\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('REJECTED', () => pm.expect(j.status).to.eql('REJECTED'));",
+                  "pm.test('reason stored', () => pm.expect(j.rejectionReason).to.eql('Wording is unclear'));",
+                  "pm.collectionVariables.set('rejectedVersionId', j.templateVersionId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "B14 Start edit -> v4 (rejected draft doesn't block a new one)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/edit",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "edit"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('v4', () => pm.expect(j.versionNumber).to.eql(4));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "B14a Edit content (v4)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/content",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "content"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"subject\": \"EDITED v4: final wording\",\n  \"bodyHtml\": \"<h1>Quarterly Filing Reminder</h1><p>Dear {{full_name}},</p><p>Your Q3 filing is due. <a href=\\\"https://www.fdic.gov\\\">FDIC</a></p><table><tr><th>Item</th><th>Amount</th></tr><tr><td>A</td><td>1</td></tr></table><script>alert(1)</script><p onclick=\\\"steal()\\\">Thanks</p>\",\n  \"mergeFields\": [\n    {\n      \"placeholderName\": \"full_name\",\n      \"sourceColumn\": \"{{mergeColumn}}\",\n      \"fieldLocation\": \"BODY\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "B15 Submit v4",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/submit",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "submit"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comments\": \"Edit v4\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Approval queue filtered by EDIT (checker)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/change-requests?changeType=EDIT&size=200&sort=submittedAt,desc",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "change-requests"
+              ],
+              "query": [
+                {
+                  "key": "changeType",
+                  "value": "EDIT"
+                },
+                {
+                  "key": "size",
+                  "value": "200"
+                },
+                {
+                  "key": "sort",
+                  "value": "submittedAt,desc"
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{checkerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "const hit = j.content.find(c => String(c.templateId) === String(pm.collectionVariables.get('tid')) && c.changeType === 'EDIT');",
+                  "pm.test('pending EDIT request for this template is in the queue', () => pm.expect(hit).to.exist);",
+                  "pm.test('it is PENDING', () => pm.expect(hit.status).to.eql('PENDING'));",
+                  "pm.collectionVariables.set('crId', hit.changeRequestId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "B17 Approve v4",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/change-requests/{{crId}}/approve",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "change-requests",
+                "{{crId}}",
+                "approve"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{checkerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comments\": \"Reviewed - looks good\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('APPROVED', () => pm.expect(j.status).to.eql('APPROVED'));",
+                  "pm.collectionVariables.set('v4VersionId', j.templateVersionId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "B18 Version history (checker): every status preserved",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/versions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "versions"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{checkerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "const byNo = Object.fromEntries(j.map(v => [v.versionNumber, v]));",
+                  "pm.test('v1 SUPERSEDED, v2 WITHDRAWN, v3 REJECTED, v4 ACTIVE', () => { pm.expect(byNo[1].status).to.eql('SUPERSEDED'); pm.expect(byNo[2].status).to.eql('WITHDRAWN'); pm.expect(byNo[3].status).to.eql('REJECTED'); pm.expect(byNo[4].status).to.eql('ACTIVE'); });",
+                  "pm.test('who/when/why recorded', () => { pm.expect(byNo[1].submittedBy).to.be.a('string'); pm.expect(byNo[1].decidedBy).to.be.a('string'); pm.expect(byNo[3].rejectionReason).to.eql('Wording is unclear'); pm.expect(byNo[4].approvalComments).to.eql('Edit v4'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "B19 Compare v1 vs v4 (checker)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/versions/compare?versionAId={{v1VersionId}}&versionBId={{v4VersionId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "versions",
+                "compare"
+              ],
+              "query": [
+                {
+                  "key": "versionAId",
+                  "value": "{{v1VersionId}}"
+                },
+                {
+                  "key": "versionBId",
+                  "value": "{{v4VersionId}}"
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{checkerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('subject differs', () => pm.expect(j.changedFields).to.include('subject'));",
+                  "pm.test('both snapshots returned', () => { pm.expect(j.versionA.versionNumber).to.eql(1); pm.expect(j.versionB.versionNumber).to.eql(4); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "B20 Version history as Analyst: active version only",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/versions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "versions"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{analystToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('single entry, the active version', () => { pm.expect(j.length).to.eql(1); pm.expect(j[0].status).to.eql('ACTIVE'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "B21 Compare as Analyst -> 403",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/versions/compare?versionAId={{v1VersionId}}&versionBId={{v4VersionId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "versions",
+                "compare"
+              ],
+              "query": [
+                {
+                  "key": "versionAId",
+                  "value": "{{v1VersionId}}"
+                },
+                {
+                  "key": "versionBId",
+                  "value": "{{v4VersionId}}"
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{analystToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 403', () => pm.response.to.have.status(403));",
+                  "pm.test('error body has a message', () => pm.expect(pm.response.json().message).to.be.a('string'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "C. Restore a prior version (EM-12)",
+      "item": [
+        {
+          "name": "C1 Restore from a REJECTED version -> 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/restore",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "restore"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sourceVersionId\": {{rejectedVersionId}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Only previously approved (ACTIVE/SUPERSEDED) versions can be restored from."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('error body has a message', () => pm.expect(pm.response.json().message).to.be.a('string'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "C2 Restore v1 (creates v5 and submits it)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/restore",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "restore"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sourceVersionId\": {{v1VersionId}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('RESTORE request is PENDING', () => { pm.expect(j.changeType).to.eql('RESTORE'); pm.expect(j.status).to.eql('PENDING'); });",
+                  "pm.test('new version 5', () => pm.expect(j.versionNumber).to.eql(5));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "C3 Second restore while one is pending -> 409",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/restore",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "restore"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sourceVersionId\": {{v1VersionId}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 409', () => pm.response.to.have.status(409));",
+                  "pm.test('error body has a message', () => pm.expect(pm.response.json().message).to.be.a('string'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Approval queue filtered by RESTORE (checker)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/change-requests?changeType=RESTORE&size=200&sort=submittedAt,desc",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "change-requests"
+              ],
+              "query": [
+                {
+                  "key": "changeType",
+                  "value": "RESTORE"
+                },
+                {
+                  "key": "size",
+                  "value": "200"
+                },
+                {
+                  "key": "sort",
+                  "value": "submittedAt,desc"
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{checkerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "const hit = j.content.find(c => String(c.templateId) === String(pm.collectionVariables.get('tid')) && c.changeType === 'RESTORE');",
+                  "pm.test('pending RESTORE request for this template is in the queue', () => pm.expect(hit).to.exist);",
+                  "pm.test('it is PENDING', () => pm.expect(hit.status).to.eql('PENDING'));",
+                  "pm.collectionVariables.set('crId', hit.changeRequestId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "C5 Self-approval of the restore -> 403",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/change-requests/{{crId}}/approve",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "change-requests",
+                "{{crId}}",
+                "approve"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comments\": \"Reviewed - looks good\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 403', () => pm.response.to.have.status(403));",
+                  "pm.test('error body has a message', () => pm.expect(pm.response.json().message).to.be.a('string'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "C6 Approve restore",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/change-requests/{{crId}}/approve",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "change-requests",
+                "{{crId}}",
+                "approve"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{checkerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comments\": \"Reviewed - looks good\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('APPROVED', () => pm.expect(j.status).to.eql('APPROVED'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "C7 Active content is an exact copy of v1",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('v5 ACTIVE', () => { pm.expect(j.versionNumber).to.eql(5); pm.expect(j.versionStatus).to.eql('ACTIVE'); });",
+                  "pm.test('v1 subject restored', () => pm.expect(j.subject).to.eql('Action needed: Q3 filing due'));",
+                  "pm.test('v1 attachment + recipient file restored', () => { pm.expect(j.attachmentFileNames).to.include('sample_attachment.docx'); pm.expect(j.recipientFileRowCount).to.eql(5); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "C8 History shows restore provenance (append-only)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/versions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "versions"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{checkerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "const byNo = Object.fromEntries(j.map(v => [v.versionNumber, v]));",
+                  "pm.test('v5 restored from v1', () => pm.expect(byNo[5].restoredFromVersionNumber).to.eql(1));",
+                  "pm.test('v4 superseded, nothing overwritten', () => { pm.expect(byNo[4].status).to.eql('SUPERSEDED'); pm.expect(j.length).to.eql(5); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "D. Retire and reactivate (EM-10)",
+      "item": [
+        {
+          "name": "D1 Delete an ACTIVE template -> 409 (retire first)",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 409', () => pm.response.to.have.status(409));",
+                  "pm.test('error body has a message', () => pm.expect(pm.response.json().message).to.be.a('string'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "D2 Retire with a reason",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/retire",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "retire"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Superseded by the 2026 template\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('RETIRE pending', () => { pm.expect(j.changeType).to.eql('RETIRE'); pm.expect(j.status).to.eql('PENDING'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "D3 Retire again while pending -> 409",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/retire",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "retire"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"dup\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 409', () => pm.response.to.have.status(409));",
+                  "pm.test('error body has a message', () => pm.expect(pm.response.json().message).to.be.a('string'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Approval queue filtered by RETIRE (checker)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/change-requests?changeType=RETIRE&size=200&sort=submittedAt,desc",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "change-requests"
+              ],
+              "query": [
+                {
+                  "key": "changeType",
+                  "value": "RETIRE"
+                },
+                {
+                  "key": "size",
+                  "value": "200"
+                },
+                {
+                  "key": "sort",
+                  "value": "submittedAt,desc"
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{checkerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "const hit = j.content.find(c => String(c.templateId) === String(pm.collectionVariables.get('tid')) && c.changeType === 'RETIRE');",
+                  "pm.test('pending RETIRE request for this template is in the queue', () => pm.expect(hit).to.exist);",
+                  "pm.test('it is PENDING', () => pm.expect(hit.status).to.eql('PENDING'));",
+                  "pm.collectionVariables.set('crId', hit.changeRequestId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "D5 Approve retire",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/change-requests/{{crId}}/approve",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "change-requests",
+                "{{crId}}",
+                "approve"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{checkerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comments\": \"Reviewed - looks good\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "D6 Template is RETIRED (active version kept for history)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('RETIRED', () => pm.expect(j.templateStatus).to.eql('RETIRED'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "D7 Edit a retired template -> 409",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/edit",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "edit"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 409', () => pm.response.to.have.status(409));",
+                  "pm.test('error body has a message', () => pm.expect(pm.response.json().message).to.be.a('string'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "D8 Retire an already-retired template -> 409",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/retire",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "retire"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"again\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 409', () => pm.response.to.have.status(409));",
+                  "pm.test('error body has a message', () => pm.expect(pm.response.json().message).to.be.a('string'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "D9 Reactivate (reason optional)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/reactivate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "reactivate"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('REACTIVATE pending', () => pm.expect(j.changeType).to.eql('REACTIVATE'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Approval queue filtered by REACTIVATE (checker)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/change-requests?changeType=REACTIVATE&size=200&sort=submittedAt,desc",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "change-requests"
+              ],
+              "query": [
+                {
+                  "key": "changeType",
+                  "value": "REACTIVATE"
+                },
+                {
+                  "key": "size",
+                  "value": "200"
+                },
+                {
+                  "key": "sort",
+                  "value": "submittedAt,desc"
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{checkerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "const hit = j.content.find(c => String(c.templateId) === String(pm.collectionVariables.get('tid')) && c.changeType === 'REACTIVATE');",
+                  "pm.test('pending REACTIVATE request for this template is in the queue', () => pm.expect(hit).to.exist);",
+                  "pm.test('it is PENDING', () => pm.expect(hit.status).to.eql('PENDING'));",
+                  "pm.collectionVariables.set('crId', hit.changeRequestId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "D11 Approve reactivate",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/change-requests/{{crId}}/approve",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "change-requests",
+                "{{crId}}",
+                "approve"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{checkerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comments\": \"Reviewed - looks good\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "D12 Template is ACTIVE again",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('ACTIVE', () => pm.expect(j.templateStatus).to.eql('ACTIVE'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "D13 Retire again (to allow delete)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/retire",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "retire"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Decommissioned\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Approval queue filtered by RETIRE (checker)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/change-requests?changeType=RETIRE&size=200&sort=submittedAt,desc",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "change-requests"
+              ],
+              "query": [
+                {
+                  "key": "changeType",
+                  "value": "RETIRE"
+                },
+                {
+                  "key": "size",
+                  "value": "200"
+                },
+                {
+                  "key": "sort",
+                  "value": "submittedAt,desc"
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{checkerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "const hit = j.content.find(c => String(c.templateId) === String(pm.collectionVariables.get('tid')) && c.changeType === 'RETIRE');",
+                  "pm.test('pending RETIRE request for this template is in the queue', () => pm.expect(hit).to.exist);",
+                  "pm.test('it is PENDING', () => pm.expect(hit.status).to.eql('PENDING'));",
+                  "pm.collectionVariables.set('crId', hit.changeRequestId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "D15 Approve retire",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/change-requests/{{crId}}/approve",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "change-requests",
+                "{{crId}}",
+                "approve"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{checkerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comments\": \"Reviewed - looks good\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "E. Delete",
+      "item": [
+        {
+          "name": "E1 Delete a RETIRED template (soft delete)",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E2 Deleted template is gone -> 404",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 404', () => pm.response.to.have.status(404));",
+                  "pm.test('error body has a message', () => pm.expect(pm.response.json().message).to.be.a('string'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E3 Name is free to reuse after delete",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"templateName\": \"PM-{{runId}}-A\",\n  \"fromIdentityId\": {{fromIdentityId}},\n  \"dataSourceQueryId\": \"{{dataSourceQueryId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', () => pm.response.to.have.status(201));",
+                  "const j = pm.response.json();",
+                  "pm.collectionVariables.set('tidD', j.templateId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E4 Delete a DRAFT template",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tidD}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tidD}}"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "F. Reject a brand-new template",
+      "item": [
+        {
+          "name": "F1 Create draft",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"templateName\": \"PM-{{runId}}-B\",\n  \"fromIdentityId\": {{fromIdentityId}},\n  \"dataSourceQueryId\": \"{{dataSourceQueryId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', () => pm.response.to.have.status(201));",
+                  "const j = pm.response.json();",
+                  "pm.collectionVariables.set('tidB', j.templateId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "F2 Content",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tidB}}/content",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tidB}}",
+                "content"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"subject\": \"Reject-flow template\",\n  \"bodyHtml\": \"<h1>Quarterly Filing Reminder</h1><p>Dear {{full_name}},</p><p>Your Q3 filing is due. <a href=\\\"https://www.fdic.gov\\\">FDIC</a></p><table><tr><th>Item</th><th>Amount</th></tr><tr><td>A</td><td>1</td></tr></table><script>alert(1)</script><p onclick=\\\"steal()\\\">Thanks</p>\",\n  \"mergeFields\": [\n    {\n      \"placeholderName\": \"full_name\",\n      \"sourceColumn\": \"{{mergeColumn}}\",\n      \"fieldLocation\": \"BODY\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "F3 Recipients DEFINE_AT_SEND",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tidB}}/recipients",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tidB}}",
+                "recipients"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"recipientMode\": \"DEFINE_AT_SEND\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "F4 Submit",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tidB}}/submit",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tidB}}",
+                "submit"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comments\": \"First version\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Approval queue filtered by NEW_TEMPLATE (checker)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/change-requests?changeType=NEW_TEMPLATE&size=200&sort=submittedAt,desc",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "change-requests"
+              ],
+              "query": [
+                {
+                  "key": "changeType",
+                  "value": "NEW_TEMPLATE"
+                },
+                {
+                  "key": "size",
+                  "value": "200"
+                },
+                {
+                  "key": "sort",
+                  "value": "submittedAt,desc"
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{checkerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "const hit = j.content.find(c => String(c.templateId) === String(pm.collectionVariables.get('tidB')) && c.changeType === 'NEW_TEMPLATE');",
+                  "pm.test('pending NEW_TEMPLATE request for this template is in the queue', () => pm.expect(hit).to.exist);",
+                  "pm.test('it is PENDING', () => pm.expect(hit.status).to.eql('PENDING'));",
+                  "pm.collectionVariables.set('crId', hit.changeRequestId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "F6 Reject",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/change-requests/{{crId}}/reject",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "change-requests",
+                "{{crId}}",
+                "reject"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{checkerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"rejectionReason\": \"Missing legal footer\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('REJECTED', () => pm.expect(j.status).to.eql('REJECTED'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "F7 Template stays DRAFT, version REJECTED",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tidB}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tidB}}"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('DRAFT / REJECTED', () => { pm.expect(j.templateStatus).to.eql('DRAFT'); pm.expect(j.versionStatus).to.eql('REJECTED'); });",
+                  "pm.test('rejection reason visible', () => pm.expect(j.rejectionReason).to.eql('Missing legal footer'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "F8 Edit a never-approved template -> 409",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tidB}}/edit",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tidB}}",
+                "edit"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 409', () => pm.response.to.have.status(409));",
+                  "pm.test('error body has a message', () => pm.expect(pm.response.json().message).to.be.a('string'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "F9 Delete (cleanup)",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tidB}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tidB}}"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "G. Withdraw on behalf (Manager) and reassign owner",
+      "item": [
+        {
+          "name": "G1 Create draft",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"templateName\": \"PM-{{runId}}-C\",\n  \"fromIdentityId\": {{fromIdentityId}},\n  \"dataSourceQueryId\": \"{{dataSourceQueryId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', () => pm.response.to.have.status(201));",
+                  "const j = pm.response.json();",
+                  "pm.collectionVariables.set('tidC', j.templateId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "G2 Content",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tidC}}/content",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tidC}}",
+                "content"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"subject\": \"Withdraw-flow template\",\n  \"bodyHtml\": \"<h1>Quarterly Filing Reminder</h1><p>Dear {{full_name}},</p><p>Your Q3 filing is due. <a href=\\\"https://www.fdic.gov\\\">FDIC</a></p><table><tr><th>Item</th><th>Amount</th></tr><tr><td>A</td><td>1</td></tr></table><script>alert(1)</script><p onclick=\\\"steal()\\\">Thanks</p>\",\n  \"mergeFields\": [\n    {\n      \"placeholderName\": \"full_name\",\n      \"sourceColumn\": \"{{mergeColumn}}\",\n      \"fieldLocation\": \"BODY\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "G3 Recipients DEFINE_AT_SEND",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tidC}}/recipients",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tidC}}",
+                "recipients"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"recipientMode\": \"DEFINE_AT_SEND\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "G4 Submit (maker)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tidC}}/submit",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tidC}}",
+                "submit"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comments\": \"Submitting to test withdraw\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Approval queue filtered by NEW_TEMPLATE (checker)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/change-requests?changeType=NEW_TEMPLATE&size=200&sort=submittedAt,desc",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "change-requests"
+              ],
+              "query": [
+                {
+                  "key": "changeType",
+                  "value": "NEW_TEMPLATE"
+                },
+                {
+                  "key": "size",
+                  "value": "200"
+                },
+                {
+                  "key": "sort",
+                  "value": "submittedAt,desc"
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{checkerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "const hit = j.content.find(c => String(c.templateId) === String(pm.collectionVariables.get('tidC')) && c.changeType === 'NEW_TEMPLATE');",
+                  "pm.test('pending NEW_TEMPLATE request for this template is in the queue', () => pm.expect(hit).to.exist);",
+                  "pm.test('it is PENDING', () => pm.expect(hit.status).to.eql('PENDING'));",
+                  "pm.collectionVariables.set('crId', hit.changeRequestId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "G6 Analyst (not submitter, not Manager/Admin) withdraws -> 403",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/change-requests/{{crId}}/withdraw",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "change-requests",
+                "{{crId}}",
+                "withdraw"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{analystToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 403', () => pm.response.to.have.status(403));",
+                  "pm.test('error body has a message', () => pm.expect(pm.response.json().message).to.be.a('string'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "G7 Manager withdraws on the submitter's behalf",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/change-requests/{{crId}}/withdraw",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "change-requests",
+                "{{crId}}",
+                "withdraw"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{managerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('WITHDRAWN', () => pm.expect(j.status).to.eql('WITHDRAWN'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "G8 Reassign ownership",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tidC}}/owner?newOwnerUserId={{checkerUser}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tidC}}",
+                "owner"
+              ],
+              "query": [
+                {
+                  "key": "newOwnerUserId",
+                  "value": "{{checkerUser}}"
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{managerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "G9 Delete (cleanup)",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tidC}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tidC}}"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{managerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "H. Lookups and security",
+      "item": [
+        {
+          "name": "H1 List templates (Sr. Analyst / Manager see every status)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates?size=25&sort=updatedAt,desc",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates"
+              ],
+              "query": [
+                {
+                  "key": "size",
+                  "value": "25"
+                },
+                {
+                  "key": "sort",
+                  "value": "updatedAt,desc"
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{checkerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('paged result', () => { pm.expect(j.content).to.be.an('array'); pm.expect(j.size).to.be.a('number'); });",
+                  "pm.test('deleted templates never listed', () => pm.expect(j.content.map(t => String(t.templateId))).to.not.include.members([String(pm.collectionVariables.get('tid'))]));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "H2 List templates as Analyst: Active only",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates?size=100",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates"
+              ],
+              "query": [
+                {
+                  "key": "size",
+                  "value": "100"
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{analystToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('only ACTIVE', () => j.content.forEach(t => pm.expect(t.status).to.eql('ACTIVE')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "H3 Approval queue with an invalid changeType -> 400",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/change-requests?changeType=BOGUS",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "change-requests"
+              ],
+              "query": [
+                {
+                  "key": "changeType",
+                  "value": "BOGUS"
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{checkerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "H4 Unknown template -> 404",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/999999999",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "999999999"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 404', () => pm.response.to.have.status(404));",
+                  "pm.test('error body has a message', () => pm.expect(pm.response.json().message).to.be.a('string'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "H5 No token -> 401 (needs a non-local security profile)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Skip this one on the local profile that permits all requests."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('rejected without a token', () => pm.expect(pm.response.code).to.be.oneOf([401, 403]));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "runId",
+      "value": ""
+    },
+    {
+      "key": "tid",
+      "value": ""
+    },
+    {
+      "key": "tidB",
+      "value": ""
+    },
+    {
+      "key": "tidC",
+      "value": ""
+    },
+    {
+      "key": "tidD",
+      "value": ""
+    },
+    {
+      "key": "crId",
+      "value": ""
+    },
+    {
+      "key": "v1VersionId",
+      "value": ""
+    },
+    {
+      "key": "v4VersionId",
+      "value": ""
+    },
+    {
+      "key": "rejectedVersionId",
+      "value": ""
+    },
+    {
+      "key": "longSubject",
+      "value": ""
+    },
+    {
+      "key": "longComment",
+      "value": ""
+    }
+  ]
+}

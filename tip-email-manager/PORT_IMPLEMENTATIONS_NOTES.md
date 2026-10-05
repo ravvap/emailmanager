@@ -15,21 +15,6 @@
     <version>1.17.2</version>
 </dependency>
 
-<!-- AttachmentStoragePortImpl (email attachments only — these ARE
-     virus-scanned and stored in blob storage, since they're served
-     back to recipients. The FILE_UPLOAD recipient file is NOT: see
-     "Recipient file storage" below.) -->
-<dependency>
-    <groupId>com.azure</groupId>
-    <artifactId>azure-storage-blob</artifactId>
-    <version>12.25.3</version>
-</dependency>
-<dependency>
-    <groupId>com.azure</groupId>
-    <artifactId>azure-identity</artifactId>
-    <version>1.11.4</version>
-</dependency>
-
 <!-- DataSourceQueryPortImpl, RestDistributionListDirectoryPort,
      RestContactDirectoryPort use spring-boot-starter-jdbc's JdbcTemplate
      and spring-boot-starter-web's RestTemplate — both already on the
@@ -44,35 +29,22 @@
 </dependency>
 ```
 
-## Recipient file storage (FILE_UPLOAD mode) — no port, by design
+## File storage (attachments + FILE_UPLOAD recipient file)
 
-Unlike attachments, the uploaded recipient file is stored directly in
-`email_template_version.recipient_file_content` (`BYTEA`) — there is no
-`RecipientFileStoragePort`/adapter, because there's no external system
-to abstract: it's just another JPA-mapped column, persisted by the
-normal `EmailTemplateVersionRepository.save()`. It is **not virus
-scanned** — it's parsed straight into `email_template_file_recipient`
-rows and never executed, downloaded, or served back to a user, unlike
-`email_template_attachment`. `RecipientFileParserPort` (above) still
-needs Apache POI, since parsing an uploaded file's structure is a real
-piece of logic worth hiding behind a port even though storage isn't.
-
-If the file sizes you actually see in practice run meaningfully above a
-few MB, revisit this — `BYTEA` columns work fine at that size but every
-`SELECT *` on `email_template_version` (and every backup) carries the
-weight of whatever's in this column. `RecipientFileConstants.MAX_SIZE_BYTES`
-(10MB) is the only current guard.
+Both are stored directly in `BYTEA` columns
+(`email_template_attachment.file_content`,
+`email_template_version.recipient_file_content`) via normal JPA saves —
+no blob storage, no storage ports, **no virus scanning anywhere in this
+module**. That is a deliberate removal of a security control; if
+attachments are ever sent to external recipients, consider scanning at
+the mail-send boundary instead. Keep an eye on row size: every
+`SELECT *` and backup carries these columns (10MB cap per file).
 
 ## application.yml
 
 ```yaml
 tip:
   email-manager:
-    attachments:
-      blob-endpoint: https://<storage-account>.blob.core.windows.net    # required
-      container-name: email-template-attachments                       # optional, has a default
-      virus-scan-url: https://<internal-scan-service>/api/v1/scan       # required
-      virus-scan-timeout-ms: 15000                                     # optional, has a default
     data-source-query:
       columns-endpoint-base-url: https://<data-manager-service>/api/v1/data-source-queries  # required — this module appends /{id}/columns
     directory:
@@ -80,10 +52,8 @@ tip:
       contacts-url: https://<email-manager-service>/api/v1/email-manager/contacts                      # required
 ```
 
-None of the four required URLs above have defaults on purpose — the
+None of the three required URLs above have defaults on purpose — the
 adapters fail fast at startup rather than silently pointing at nothing.
-Nothing recipient-file-related needs a config entry here — there's
-nothing external to point at.
 
 ## Assumptions to reconcile before wiring these up for real
 
@@ -110,11 +80,6 @@ nothing external to point at.
   a loop of individual lookups (or a batch-validate endpoint, if one
   exists) — the `DistributionListDirectoryPort`/`ContactDirectoryPort`
   contracts don't need to change either way.
-- **RestVirusScanClient** (email attachments only) assumes a synchronous
-  scan endpoint that returns a verdict in an `X-Scan-Verdict` response
-  header. Adjust to match the platform's actual scanning service
-  contract (this may instead be async, ICAP-based, or return the
-  verdict in the body).
 - **Recipient-row email validation** (`RecipientFileConstants.EMAIL_PATTERN`)
   is a simple regex, not RFC 5322 validation — it exists to flag obviously
   malformed rows on the Preview screen, not to be a hard send-time gate.

@@ -34,7 +34,6 @@ public class EmailTemplateServiceImpl implements EmailTemplateService {
     private final EmailTemplateAuditLogRepository auditLogRepository;
 
     private final DataSourceQueryPort dataSourceQueryPort;
-    private final AttachmentStoragePort attachmentStoragePort;
     private final RichTextSanitizerPort richTextSanitizerPort;
     private final DistributionListDirectoryPort distributionListDirectoryPort;
     private final ContactDirectoryPort contactDirectoryPort;
@@ -263,15 +262,18 @@ public class EmailTemplateServiceImpl implements EmailTemplateService {
             throw new IllegalArgumentException(EmailTemplateConstants.MSG_ATTACHMENT_TYPE_NOT_ALLOWED);
         }
 
-        String storagePath = attachmentStoragePort.storeAndScan(file);
+        if (file.isEmpty()) {
+            throw new IllegalArgumentException(EmailTemplateConstants.MSG_ATTACHMENT_EMPTY);
+        }
+        // Stored directly in the attachment row (BYTEA) — no blob storage, no virus scan.
+        byte[] content = readBytes(file);
 
         attachmentRepository.save(EmailTemplateAttachment.builder()
                 .templateVersion(version)
                 .fileName(file.getOriginalFilename())
                 .fileExtension(extension)
-                .fileSizeBytes(file.getSize())
-                .storagePath(storagePath)
-                .virusScanStatus(VirusScanStatus.CLEAN)
+                .fileSizeBytes((long) content.length)
+                .fileContent(content)
                 .uploadedBy(currentUser)
                 .build());
 
@@ -644,6 +646,10 @@ public class EmailTemplateServiceImpl implements EmailTemplateService {
         if (cr.getSubmittedBy().equals(currentUser)) {
             throw new SecurityException(EmailTemplateConstants.MSG_SELF_APPROVAL_BLOCKED);
         }
+        // EM-13: "Reject (with a reason)" — reason is mandatory on reject only.
+        if (isBlank(request.getRejectionReason())) {
+            throw new IllegalArgumentException(EmailTemplateConstants.MSG_REJECTION_REASON_REQUIRED);
+        }
 
         if (cr.getChangeType() == ChangeType.NEW_TEMPLATE || cr.getChangeType() == ChangeType.EDIT || cr.getChangeType() == ChangeType.RESTORE) {
             EmailTemplateVersion version = cr.getTemplateVersion();
@@ -869,8 +875,8 @@ public class EmailTemplateServiceImpl implements EmailTemplateService {
                     .fileName(att.getFileName())
                     .fileExtension(att.getFileExtension())
                     .fileSizeBytes(att.getFileSizeBytes())
-                    .storagePath(att.getStoragePath())
-                    .virusScanStatus(att.getVirusScanStatus())
+                    .fileContent(att.getFileContent() != null
+                            ? Arrays.copyOf(att.getFileContent(), att.getFileContent().length) : null)
                     .uploadedBy(currentUser)
                     .build());
         }

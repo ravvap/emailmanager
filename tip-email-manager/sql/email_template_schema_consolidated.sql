@@ -1,14 +1,14 @@
 -- =====================================================================
 -- TIP Email Manager — Email Template module (EM-8 through EM-13)
--- CONSOLIDATED schema — current end-state only, V1 through V7 merged.
+-- CONSOLIDATED schema — current end-state only, V1 through V8 merged.
 -- Schema: txn
 --
 -- This file is a reference snapshot, not a migration — it is not meant
--- to be run against a database that already has V1-V7 applied (every
+-- to be run against a database that already has V1-V8 applied (every
 -- CREATE/ALTER in those files already produced this exact state). Keep
--- using the V1__...sql through V7__...sql files for actual Flyway
--- deployment; regenerate this file (or a V8+ consolidated one) next
--- time enough changes pile up that reading seven migrations in sequence
+-- using the V1__...sql through V8__...sql files for actual Flyway
+-- deployment; regenerate this file (or a V9+ consolidated one) next
+-- time enough changes pile up that reading eight migrations in sequence
 -- stops being the fastest way to see the current shape.
 --
 -- Table-by-table origin, for traceability back to the migration that
@@ -18,9 +18,7 @@
 --                                 recipient-mapping conflict flag, restore provenance),
 --                                 V3 (FILE_UPLOAD file/sheet columns, storage-path approach),
 --                                 V4 (switched FILE_UPLOAD storage from blob path to in-row BYTEA)
---   email_template_attachment    V1 — unchanged; still blob storage + virus scan (email
---                                 attachments are served back to recipients, unlike the
---                                 recipient file, which never leaves the database)
+--   email_template_attachment    V1 (base), V8 (blob storage + virus scan removed; in-row BYTEA)
 --   email_template_merge_field   V1
 --   email_template_recipient_selection  V1
 --   email_template_file_recipient       V5 (new) — parsed recipient rows
@@ -99,9 +97,7 @@ CREATE TABLE txn.email_template_version (
     recipient_name_column    VARCHAR(100),
 
     -- FILE_UPLOAD mode only — stored directly in this row (BYTEA), not
-    -- in blob storage. NOT virus-scanned: parsed straight into
-    -- email_template_file_recipient and never served back to a user,
-    -- unlike email_template_attachment.
+    -- in blob storage. No virus scanning anywhere in this module.
     recipient_file_name      VARCHAR(255),
     recipient_file_content   BYTEA,
     recipient_sheet_name     VARCHAR(255),
@@ -143,9 +139,7 @@ CREATE INDEX ix_email_template_version_status ON txn.email_template_version(stat
 -- =====================================================================
 -- email_template_attachment : stored with the version (cannot change
 -- on an already-approved version — a new version is created instead).
--- Unlike the recipient file above, this IS virus-scanned and stored in
--- blob storage, because it is served back to recipients as an email
--- attachment.
+-- Content lives in-row (BYTEA); no blob storage, no virus scanning.
 -- =====================================================================
 CREATE TABLE txn.email_template_attachment (
     attachment_id            BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -153,13 +147,10 @@ CREATE TABLE txn.email_template_attachment (
     file_name                VARCHAR(255)      NOT NULL,
     file_extension            VARCHAR(10)       NOT NULL,
     file_size_bytes           BIGINT            NOT NULL,
-    storage_path              VARCHAR(500)      NOT NULL,
-    virus_scan_status         VARCHAR(20)       NOT NULL DEFAULT 'PENDING',
+    file_content              BYTEA             NOT NULL,
     uploaded_by                VARCHAR(100)      NOT NULL,
     uploaded_at                TIMESTAMPTZ       NOT NULL DEFAULT now(),
 
-    CONSTRAINT ck_attachment_scan_status
-        CHECK (virus_scan_status IN ('PENDING','CLEAN','INFECTED','FAILED')),
     CONSTRAINT ck_attachment_size CHECK (file_size_bytes <= 10485760)
 );
 

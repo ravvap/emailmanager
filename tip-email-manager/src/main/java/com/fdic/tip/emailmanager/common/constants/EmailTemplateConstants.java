@@ -28,8 +28,11 @@ public final class EmailTemplateConstants {
             "You are not authorized to reference this data source query.";
     public static final String MSG_ATTACHMENT_TOO_LARGE = "Attachment exceeds the maximum allowed size of 10MB.";
     public static final String MSG_ATTACHMENT_TYPE_NOT_ALLOWED = "Attachment file type is not permitted.";
+    public static final String MSG_ATTACHMENT_EMPTY = "Attachment file is empty.";
+    public static final String MSG_ATTACHMENT_READ_FAILED = "Could not read the uploaded attachment.";
     public static final String MSG_ALREADY_PENDING_APPROVAL = "This template version is already pending approval.";
     public static final String MSG_SUBMIT_SUCCESS = "Template submitted for approval.";
+    public static final String MSG_REJECTION_REASON_REQUIRED = "A reason is required to reject a change.";
     public static final String MSG_APPROVAL_COMMENTS_REQUIRED = "Approval comments are required to submit for approval.";
     public static final String MSG_APPROVE_SUCCESS = "Template version approved and is now active.";
     public static final String MSG_REJECT_SUCCESS = "Template version rejected.";

@@ -1,8 +1,9 @@
 package com.fdic.tip.emailmanager.template.entity;
 
-import com.fdic.tip.emailmanager.template.enums.VirusScanStatus;
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.time.OffsetDateTime;
 
@@ -10,6 +11,10 @@ import java.time.OffsetDateTime;
  * Attachment stored with a specific template version. Attachments cannot
  * change on an already-approved version — changing one always creates a
  * new version (see EmailTemplateVersion).
+ *
+ * Stored directly in this row (BYTEA), not external blob storage — same
+ * pattern as EmailTemplateVersion's recipient file content. Not virus
+ * scanned: there is no scanning anywhere in this module.
  */
 @Entity
 @Table(name = "email_template_attachment", schema = "txn")
@@ -38,12 +43,10 @@ public class EmailTemplateAttachment {
     @Column(name = "file_size_bytes", nullable = false)
     private Long fileSizeBytes;
 
-    @Column(name = "storage_path", length = 500, nullable = false)
-    private String storagePath;
-
-    @Enumerated(EnumType.STRING)
-    @Column(name = "virus_scan_status", length = 20, nullable = false)
-    private VirusScanStatus virusScanStatus;
+    @Lob
+    @JdbcTypeCode(SqlTypes.VARBINARY)
+    @Column(name = "file_content", nullable = false)
+    private byte[] fileContent;
 
     @Column(name = "uploaded_by", length = 100, nullable = false)
     private String uploadedBy;
@@ -54,8 +57,5 @@ public class EmailTemplateAttachment {
     @PrePersist
     protected void onCreate() {
         this.uploadedAt = OffsetDateTime.now();
-        if (this.virusScanStatus == null) {
-            this.virusScanStatus = VirusScanStatus.PENDING;
-        }
     }
 }
