@@ -1,15 +1,6 @@
 -- =====================================================================
 -- TIP Email Manager — Email Template module (EM-8 through EM-13)
--- CONSOLIDATED schema — current end-state only, V1 through V6 merged.
 -- Schema: txn
---
--- This file is a reference snapshot, not a migration — it is not meant
--- to be run against a database that already has V1-V6 applied (every
--- CREATE/ALTER in those files already produced this exact state). Keep
--- using the V1__...sql through V6__...sql files for actual Flyway
--- deployment; regenerate this file (or a V7+ consolidated one) next
--- time enough changes pile up that reading six migrations in sequence
--- stops being the fastest way to see the current shape.
 --
 -- Table-by-table origin, for traceability back to the migration that
 -- introduced or changed it:
@@ -143,8 +134,7 @@ CREATE INDEX ix_email_template_version_status ON txn.email_template_version(stat
 -- =====================================================================
 -- email_template_attachment : stored with the version (cannot change
 -- on an already-approved version — a new version is created instead).
--- Unlike the recipient file above, this IS virus-scanned and stored in
--- blob storage, because it is served back to recipients as an email
+-- Unlike the recipient file above, because it is served back to recipients as an email
 -- attachment.
 -- =====================================================================
 CREATE TABLE txn.email_template_attachment (
