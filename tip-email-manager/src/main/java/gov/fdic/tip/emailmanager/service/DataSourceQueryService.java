@@ -232,28 +232,94 @@ public class DataSourceQueryService {
     }
 
     /**
-     * Parses SQL using JSqlParser and returns the list of selected column names/aliases.
+     * Extracts readable column names or explicit column aliases from a valid SELECT query.
+     * 
+     * Handles:
+     * - Standard column selection: "SELECT column1, column2 FROM tablename" -> ["column1", "column2"]
+     * - Table aliases/prefixes: "SELECT t.column1, t.column2 FROM tablename t" -> ["column1", "column2"]
+     * - Column Aliases: "SELECT column1 AS col1, column2 col2 FROM tablename" -> ["col1", "col2"]
+     * - Union/Set Queries: Extracts top-level select structure
+     *
+     * @param sqlText Raw SQL query string
+     * @return List of clean column/field names
      */
     public List<String> extractColumnsFromSql(String sqlText) {
+        if (sqlText == null || sqlText.isBlank()) {
+            throw new IllegalArgumentException("SQL text cannot be blank.");
+        }
+
         try {
-            net.sf.jsqlparser.statement.Statement statement = CCJSqlParserUtil.parse(sqlText);
+            Statement statement = CCJSqlParserUtil.parse(sqlText);
 
             if (!(statement instanceof Select)) {
                 throw new IllegalArgumentException("Query must be a valid SELECT statement.");
             }
 
             Select selectStatement = (Select) statement;
-            PlainSelect plainSelect = (PlainSelect) selectStatement.getSelectBody();
+            PlainSelect plainSelect = extractPlainSelect(selectStatement);
 
-            List<String> columns = new java.util.ArrayList<>();
+            if (plainSelect == null || plainSelect.getSelectItems() == null) {
+                throw new IllegalArgumentException("Unable to parse SELECT items from query.");
+            }
+
+            List<String> columns = new ArrayList<>();
             for (SelectItem<?> item : plainSelect.getSelectItems()) {
-                columns.add(item.toString().trim());
+                columns.add(extractColumnName(item));
             }
 
             return columns;
         } catch (Exception e) {
+            if (e instanceof IllegalArgumentException) {
+                throw (IllegalArgumentException) e;
+            }
             throw new IllegalArgumentException("Failed to parse SQL columns: " + e.getMessage(), e);
         }
+    }
+
+    /**
+     * Resolves PlainSelect from plain or set-operation (UNION) SELECT statements.
+     */
+    private PlainSelect extractPlainSelect(Select select) {
+        if (select instanceof PlainSelect) {
+            return (PlainSelect) select;
+        } else if (select.getSelectBody() instanceof PlainSelect) {
+            return (PlainSelect) select.getSelectBody();
+        } else if (select.getSelectBody() instanceof SetOperationList) {
+            SetOperationList setOps = (SetOperationList) select.getSelectBody();
+            if (setOps.getSelects() != null && !setOps.getSelects().isEmpty()) {
+                Select firstSelect = setOps.getSelects().get(0);
+                return extractPlainSelect(firstSelect);
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Extracts column alias or un-prefixed column name from a SelectItem.
+     */
+    private String extractColumnName(SelectItem<?> item) {
+        // 1. If column has an explicit alias (e.g. SELECT col AS my_alias), use alias
+        Alias alias = item.getAlias();
+        if (alias != null && alias.getName() != null && !alias.getName().isBlank()) {
+            return sanitizeName(alias.getName());
+        }
+
+        // 2. If item is a direct column reference (e.g. SELECT t.column1), extract column name only
+        if (item.getExpression() instanceof Column) {
+            Column column = (Column) item.getExpression();
+            return sanitizeName(column.getColumnName());
+        }
+
+        // 3. Fallback for expressions/functions (e.g. SELECT UPPER(name))
+        return sanitizeName(item.toString().trim());
+    }
+
+    /**
+     * Strips SQL quotes or brackets if present (e.g., "column1" -> column1)
+     */
+    private String sanitizeName(String name) {
+        if (name == null) return "";
+        return name.replaceAll("^[\"`\\[]|[\"`\\]]$", "").trim();
     }
     
 }
