@@ -1,0 +1,3264 @@
+{
+  "info": {
+    "_postman_id": "479225e9-0d4a-4e38-9231-8abfd4b8137a",
+    "name": "TIP Email Manager - Author through Submit, per Recipient Mode",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "One self-contained flow per recipient mode - create draft -> email content -> attachment -> recipients -> preview -> submit for approval -> verify the change-request record.\n\nData source query under test: select ca_name, ca_type, status, email, name from em_contact where status=:status\n\nFlows stop at 'submitted, pending approval' and leave the templates pending (so you can inspect the rows). The run halts at the first unexpected status and prints the response body."
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "if (!pm.collectionVariables.get('runId')) { pm.collectionVariables.set('runId', Date.now()); }"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "1. CONTACT_DISTRIBUTION_LIST",
+      "item": [
+        {
+          "name": "1. Create draft",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"templateName\": \"PM-{{runId}}-CDL\",\n  \"fromIdentityId\": {{fromIdentityId}},\n  \"dataSourceQueryId\": \"{{dataSourceQueryId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(201));",
+                  "if (pm.response.code !== 201) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
+                  "const j = pm.response.json();",
+                  "pm.test('v1 DRAFT, template DRAFT', () => { pm.expect(j.versionNumber).to.eql(1); pm.expect(j.versionStatus).to.eql('DRAFT'); pm.expect(j.templateStatus).to.eql('DRAFT'); });",
+                  "pm.test('pinned to a query version', () => pm.expect(j.dataSourceQueryVersion).to.be.a('number'));",
+                  "pm.collectionVariables.set('tid', j.templateId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2. Verify the query's columns (ca_name, ca_type, status, email, name)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/query-columns",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "query-columns"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "select ca_name, ca_type, status, email, name from em_contact where status=:status\n\nMerge-field and recipient-column names used below come from this response, so a case difference (e.g. EMAIL) doesn't break the run."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
+                  "const j = pm.response.json();",
+                  "const want = {colCaName: 'ca_name', colCaType: 'ca_type', colStatus: 'status', colEmail: 'email', colName: 'name'};",
+                  "const byLower = Object.fromEntries(j.map(c => [c.toLowerCase(), c]));",
+                  "const missing = Object.values(want).filter(w => !(w in byLower));",
+                  "pm.test('query returns all five columns', () => pm.expect(missing, 'query returned: ' + j.join(', ')).to.be.empty);",
+                  "if (missing.length) { pm.execution.setNextRequest(null); }",
+                  "// use the exact spelling/case the query returns (e.g. upper-case on Oracle)",
+                  "Object.entries(want).forEach(([v, w]) => { if (byLower[w]) pm.collectionVariables.set(v, byLower[w]); });",
+                  "pm.collectionVariables.set('queryColumns', j.join(', '));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3. Email content with merge fields (subject + body)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/content",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "content"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"subject\": \"Filing reminder for \\u007b\\u007bca_type\\u007d\\u007d\",\n  \"bodyHtml\": \"<h1>Quarterly Filing Reminder</h1><p>Dear \\u007b\\u007bname\\u007d\\u007d,</p><p>Account <b>\\u007b\\u007bca_name\\u007d\\u007d</b> (status: \\u007b\\u007bstatus\\u007d\\u007d) has a filing due.</p><table><tr><th>Contact</th><th>Email</th></tr><tr><td>\\u007b\\u007bname\\u007d\\u007d</td><td>\\u007b\\u007bemail\\u007d\\u007d</td></tr></table><p>See <a href=\\\"https://www.fdic.gov\\\">fdic.gov</a>.</p>\",\n  \"mergeFields\": [\n    {\n      \"placeholderName\": \"ca_type\",\n      \"sourceColumn\": \"{{colCaType}}\",\n      \"fieldLocation\": \"SUBJECT\"\n    },\n    {\n      \"placeholderName\": \"name\",\n      \"sourceColumn\": \"{{colName}}\",\n      \"fieldLocation\": \"BODY\"\n    },\n    {\n      \"placeholderName\": \"ca_name\",\n      \"sourceColumn\": \"{{colCaName}}\",\n      \"fieldLocation\": \"BODY\"\n    },\n    {\n      \"placeholderName\": \"status\",\n      \"sourceColumn\": \"{{colStatus}}\",\n      \"fieldLocation\": \"BODY\"\n    },\n    {\n      \"placeholderName\": \"email\",\n      \"sourceColumn\": \"{{colEmail}}\",\n      \"fieldLocation\": \"BODY\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
+                  "const j = pm.response.json();",
+                  "pm.test('5 merge fields saved, none broken', () => { pm.expect(j.mergeFields.length).to.eql(5); pm.expect(j.mergeFields.filter(m => m.broken).map(m => m.sourceColumn), 'query returned: ' + pm.collectionVariables.get('queryColumns')).to.be.empty; });",
+                  "pm.test('no merge-field conflict', () => pm.expect(j.hasMergeFieldConflict).to.eql(false));",
+                  "pm.test('formatting kept (heading, table, link)', () => { pm.expect(j.bodyHtml).to.include('<h1>'); pm.expect(j.bodyHtml).to.include('<table'); pm.expect(j.bodyHtml).to.include('href'); });",
+                  "pm.test('placeholders preserved in body', () => pm.expect(j.bodyHtml).to.include('{' + '{ca_name}}'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4. Add attachment (.docx)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/attachments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "attachments"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "sample_attachment.docx"
+                }
+              ]
+            },
+            "description": "Needs Postman's working directory set to postman/sample-files."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
+                  "const j = pm.response.json();",
+                  "pm.test('attachment listed', () => pm.expect(j.attachmentFileNames).to.include('sample_attachment.docx'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "5. Select unknown distribution list / contact ids -> 400",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/recipients",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "recipients"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"recipientMode\": \"CONTACT_DISTRIBUTION_LIST\",\n  \"distributionListIds\": [\n    999999999\n  ],\n  \"contactIds\": [\n    999999998\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Ids are validated against the existing distribution-list / contacts endpoints before anything is saved."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 400', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(400));",
+                  "if (pm.response.code !== 400) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
+                  "pm.test('error body has a message', () => pm.expect(pm.response.json().message).to.be.a('string'));",
+                  "pm.test(\"message mentions: invalid or inactive\", () => pm.expect(pm.response.json().message).to.include(\"invalid or inactive\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "6. Select a distribution list and a contact",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/recipients",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "recipients"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"recipientMode\": \"CONTACT_DISTRIBUTION_LIST\",\n  \"distributionListIds\": [\n    {{distListId}}\n  ],\n  \"contactIds\": [\n    {{contactId}}\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
+                  "const j = pm.response.json();",
+                  "pm.test('mode saved, no column mapping involved', () => { pm.expect(j.recipientMode).to.eql('CONTACT_DISTRIBUTION_LIST'); pm.expect(j.hasRecipientMappingConflict).to.eql(false); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "7. Preview (what the Preview-and-Submit screen shows)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
+                  "const j = pm.response.json();",
+                  "pm.test('Preview: mode CONTACT_DISTRIBUTION_LIST, still DRAFT, no conflicts', () => { pm.expect(j.recipientMode).to.eql('CONTACT_DISTRIBUTION_LIST'); pm.expect(j.versionStatus).to.eql('DRAFT'); pm.expect(j.hasMergeFieldConflict).to.eql(false); pm.expect(j.hasRecipientMappingConflict).to.eql(false); });",
+                  "pm.test('Preview has the Template Details + Email Contents the screen shows', () => { pm.expect(j.templateName).to.include('PM-'); pm.expect(j.versionNumber).to.eql(1); pm.expect(j.subject).to.include('Filing reminder'); pm.expect(j.attachmentFileNames).to.include('sample_attachment.docx'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "8. Submit with blank Approval Comments -> 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/submit",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "submit"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comments\": \"  \"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 400', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(400));",
+                  "if (pm.response.code !== 400) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
+                  "pm.test('error body has a message', () => pm.expect(pm.response.json().message).to.be.a('string'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "9. Submit for approval",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/submit",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "submit"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comments\": \"Recipient mode CONTACT_DISTRIBUTION_LIST - ready for review\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
+                  "const j = pm.response.json();",
+                  "pm.test('version PENDING_APPROVAL', () => pm.expect(j.versionStatus).to.eql('PENDING_APPROVAL'));",
+                  "pm.test('Approval Comments saved and echoed', () => pm.expect(j.approvalComments).to.eql(\"Recipient mode CONTACT_DISTRIBUTION_LIST - ready for review\"));",
+                  "pm.test('template itself stays DRAFT until approved', () => pm.expect(j.templateStatus).to.eql('DRAFT'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "10. Change request record exists (approval queue, checker)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/change-requests?changeType=NEW_TEMPLATE&size=200&sort=submittedAt,desc",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "change-requests"
+              ],
+              "query": [
+                {
+                  "key": "changeType",
+                  "value": "NEW_TEMPLATE"
+                },
+                {
+                  "key": "size",
+                  "value": "200"
+                },
+                {
+                  "key": "sort",
+                  "value": "submittedAt,desc"
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{checkerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
+                  "const j = pm.response.json();",
+                  "const hit = j.content.find(c => String(c.templateId) === String(pm.collectionVariables.get('tid')));",
+                  "pm.test('a change request exists for this template', () => pm.expect(hit, 'queue returned ' + j.content.length + ' pending requests, none for template ' + pm.collectionVariables.get('tid')).to.exist);",
+                  "pm.test('NEW_TEMPLATE / PENDING, submitted by the maker', () => { pm.expect(hit.changeType).to.eql('NEW_TEMPLATE'); pm.expect(hit.status).to.eql('PENDING'); pm.expect(hit.submittedBy).to.be.a('string'); });",
+                  "pm.test('Approval Comments stored on the request', () => pm.expect(hit.reason).to.eql(\"Recipient mode CONTACT_DISTRIBUTION_LIST - ready for review\"));",
+                  "pm.test('linked to version 1', () => pm.expect(hit.versionNumber).to.eql(1));",
+                  "pm.collectionVariables.set('crId', hit.changeRequestId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "11. Template detail after submit",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
+                  "const j = pm.response.json();",
+                  "pm.test('PENDING_APPROVAL and not yet active', () => { pm.expect(j.versionStatus).to.eql('PENDING_APPROVAL'); pm.expect(j.templateStatus).to.eql('DRAFT'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "12. Cannot edit while pending -> 409",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/content",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "content"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"subject\": \"x\",\n  \"bodyHtml\": \"<p>x</p>\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 409', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(409));",
+                  "if (pm.response.code !== 409) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
+                  "pm.test('error body has a message', () => pm.expect(pm.response.json().message).to.be.a('string'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. DATA_SOURCE_QUERY",
+      "item": [
+        {
+          "name": "1. Create draft",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"templateName\": \"PM-{{runId}}-DSQ\",\n  \"fromIdentityId\": {{fromIdentityId}},\n  \"dataSourceQueryId\": \"{{dataSourceQueryId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(201));",
+                  "if (pm.response.code !== 201) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
+                  "const j = pm.response.json();",
+                  "pm.test('v1 DRAFT, template DRAFT', () => { pm.expect(j.versionNumber).to.eql(1); pm.expect(j.versionStatus).to.eql('DRAFT'); pm.expect(j.templateStatus).to.eql('DRAFT'); });",
+                  "pm.test('pinned to a query version', () => pm.expect(j.dataSourceQueryVersion).to.be.a('number'));",
+                  "pm.collectionVariables.set('tid', j.templateId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2. Verify the query's columns (ca_name, ca_type, status, email, name)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/query-columns",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "query-columns"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "select ca_name, ca_type, status, email, name from em_contact where status=:status\n\nMerge-field and recipient-column names used below come from this response, so a case difference (e.g. EMAIL) doesn't break the run."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
+                  "const j = pm.response.json();",
+                  "const want = {colCaName: 'ca_name', colCaType: 'ca_type', colStatus: 'status', colEmail: 'email', colName: 'name'};",
+                  "const byLower = Object.fromEntries(j.map(c => [c.toLowerCase(), c]));",
+                  "const missing = Object.values(want).filter(w => !(w in byLower));",
+                  "pm.test('query returns all five columns', () => pm.expect(missing, 'query returned: ' + j.join(', ')).to.be.empty);",
+                  "if (missing.length) { pm.execution.setNextRequest(null); }",
+                  "// use the exact spelling/case the query returns (e.g. upper-case on Oracle)",
+                  "Object.entries(want).forEach(([v, w]) => { if (byLower[w]) pm.collectionVariables.set(v, byLower[w]); });",
+                  "pm.collectionVariables.set('queryColumns', j.join(', '));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3. Email content with merge fields (subject + body)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/content",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "content"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"subject\": \"Filing reminder for \\u007b\\u007bca_type\\u007d\\u007d\",\n  \"bodyHtml\": \"<h1>Quarterly Filing Reminder</h1><p>Dear \\u007b\\u007bname\\u007d\\u007d,</p><p>Account <b>\\u007b\\u007bca_name\\u007d\\u007d</b> (status: \\u007b\\u007bstatus\\u007d\\u007d) has a filing due.</p><table><tr><th>Contact</th><th>Email</th></tr><tr><td>\\u007b\\u007bname\\u007d\\u007d</td><td>\\u007b\\u007bemail\\u007d\\u007d</td></tr></table><p>See <a href=\\\"https://www.fdic.gov\\\">fdic.gov</a>.</p>\",\n  \"mergeFields\": [\n    {\n      \"placeholderName\": \"ca_type\",\n      \"sourceColumn\": \"{{colCaType}}\",\n      \"fieldLocation\": \"SUBJECT\"\n    },\n    {\n      \"placeholderName\": \"name\",\n      \"sourceColumn\": \"{{colName}}\",\n      \"fieldLocation\": \"BODY\"\n    },\n    {\n      \"placeholderName\": \"ca_name\",\n      \"sourceColumn\": \"{{colCaName}}\",\n      \"fieldLocation\": \"BODY\"\n    },\n    {\n      \"placeholderName\": \"status\",\n      \"sourceColumn\": \"{{colStatus}}\",\n      \"fieldLocation\": \"BODY\"\n    },\n    {\n      \"placeholderName\": \"email\",\n      \"sourceColumn\": \"{{colEmail}}\",\n      \"fieldLocation\": \"BODY\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
+                  "const j = pm.response.json();",
+                  "pm.test('5 merge fields saved, none broken', () => { pm.expect(j.mergeFields.length).to.eql(5); pm.expect(j.mergeFields.filter(m => m.broken).map(m => m.sourceColumn), 'query returned: ' + pm.collectionVariables.get('queryColumns')).to.be.empty; });",
+                  "pm.test('no merge-field conflict', () => pm.expect(j.hasMergeFieldConflict).to.eql(false));",
+                  "pm.test('formatting kept (heading, table, link)', () => { pm.expect(j.bodyHtml).to.include('<h1>'); pm.expect(j.bodyHtml).to.include('<table'); pm.expect(j.bodyHtml).to.include('href'); });",
+                  "pm.test('placeholders preserved in body', () => pm.expect(j.bodyHtml).to.include('{' + '{ca_name}}'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4. Add attachment (.docx)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/attachments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "attachments"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "sample_attachment.docx"
+                }
+              ]
+            },
+            "description": "Needs Postman's working directory set to postman/sample-files."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
+                  "const j = pm.response.json();",
+                  "pm.test('attachment listed', () => pm.expect(j.attachmentFileNames).to.include('sample_attachment.docx'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "5. Map recipient email to a column the query doesn't return",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/recipients",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "recipients"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"recipientMode\": \"DATA_SOURCE_QUERY\",\n  \"recipientEmailColumn\": \"email_address\",\n  \"recipientNameColumn\": \"{{colName}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
+                  "const j = pm.response.json();",
+                  "pm.test('mapping conflict flagged', () => pm.expect(j.hasRecipientMappingConflict).to.eql(true));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "6. Submit blocked by the mapping conflict -> 409",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/submit",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "submit"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comments\": \"should be blocked\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 409', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(409));",
+                  "if (pm.response.code !== 409) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
+                  "pm.test('error body has a message', () => pm.expect(pm.response.json().message).to.be.a('string'));",
+                  "pm.test(\"message mentions: recipient column mapping\", () => pm.expect(pm.response.json().message).to.include(\"recipient column mapping\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "7. Map recipient email = email, recipient name = name",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/recipients",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "recipients"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"recipientMode\": \"DATA_SOURCE_QUERY\",\n  \"recipientEmailColumn\": \"{{colEmail}}\",\n  \"recipientNameColumn\": \"{{colName}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Query-driven: the query's rows are the recipients. NOTE: the template doesn't store a value for :status - that has to be supplied wherever the query is run at send time."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
+                  "const j = pm.response.json();",
+                  "pm.test('mapping saved', () => { pm.expect(j.recipientEmailColumn).to.eql(pm.collectionVariables.get('colEmail')); pm.expect(j.recipientNameColumn).to.eql(pm.collectionVariables.get('colName')); });",
+                  "pm.test('conflict cleared', () => pm.expect(j.hasRecipientMappingConflict).to.eql(false));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "8. Preview (what the Preview-and-Submit screen shows)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
+                  "const j = pm.response.json();",
+                  "pm.test('Preview: mode DATA_SOURCE_QUERY, still DRAFT, no conflicts', () => { pm.expect(j.recipientMode).to.eql('DATA_SOURCE_QUERY'); pm.expect(j.versionStatus).to.eql('DRAFT'); pm.expect(j.hasMergeFieldConflict).to.eql(false); pm.expect(j.hasRecipientMappingConflict).to.eql(false); });",
+                  "pm.test('Preview has the Template Details + Email Contents the screen shows', () => { pm.expect(j.templateName).to.include('PM-'); pm.expect(j.versionNumber).to.eql(1); pm.expect(j.subject).to.include('Filing reminder'); pm.expect(j.attachmentFileNames).to.include('sample_attachment.docx'); });",
+                  "pm.test('mapped columns shown', () => pm.expect(j.recipientEmailColumn).to.eql(pm.collectionVariables.get('colEmail')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "9. Submit with blank Approval Comments -> 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/submit",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "submit"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comments\": \"  \"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 400', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(400));",
+                  "if (pm.response.code !== 400) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
+                  "pm.test('error body has a message', () => pm.expect(pm.response.json().message).to.be.a('string'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "10. Submit for approval",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/submit",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "submit"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comments\": \"Recipient mode DATA_SOURCE_QUERY - ready for review\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
+                  "const j = pm.response.json();",
+                  "pm.test('version PENDING_APPROVAL', () => pm.expect(j.versionStatus).to.eql('PENDING_APPROVAL'));",
+                  "pm.test('Approval Comments saved and echoed', () => pm.expect(j.approvalComments).to.eql(\"Recipient mode DATA_SOURCE_QUERY - ready for review\"));",
+                  "pm.test('template itself stays DRAFT until approved', () => pm.expect(j.templateStatus).to.eql('DRAFT'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "11. Change request record exists (approval queue, checker)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/change-requests?changeType=NEW_TEMPLATE&size=200&sort=submittedAt,desc",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "change-requests"
+              ],
+              "query": [
+                {
+                  "key": "changeType",
+                  "value": "NEW_TEMPLATE"
+                },
+                {
+                  "key": "size",
+                  "value": "200"
+                },
+                {
+                  "key": "sort",
+                  "value": "submittedAt,desc"
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{checkerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
+                  "const j = pm.response.json();",
+                  "const hit = j.content.find(c => String(c.templateId) === String(pm.collectionVariables.get('tid')));",
+                  "pm.test('a change request exists for this template', () => pm.expect(hit, 'queue returned ' + j.content.length + ' pending requests, none for template ' + pm.collectionVariables.get('tid')).to.exist);",
+                  "pm.test('NEW_TEMPLATE / PENDING, submitted by the maker', () => { pm.expect(hit.changeType).to.eql('NEW_TEMPLATE'); pm.expect(hit.status).to.eql('PENDING'); pm.expect(hit.submittedBy).to.be.a('string'); });",
+                  "pm.test('Approval Comments stored on the request', () => pm.expect(hit.reason).to.eql(\"Recipient mode DATA_SOURCE_QUERY - ready for review\"));",
+                  "pm.test('linked to version 1', () => pm.expect(hit.versionNumber).to.eql(1));",
+                  "pm.collectionVariables.set('crId', hit.changeRequestId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "12. Template detail after submit",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
+                  "const j = pm.response.json();",
+                  "pm.test('PENDING_APPROVAL and not yet active', () => { pm.expect(j.versionStatus).to.eql('PENDING_APPROVAL'); pm.expect(j.templateStatus).to.eql('DRAFT'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "13. Cannot edit while pending -> 409",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/content",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "content"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"subject\": \"x\",\n  \"bodyHtml\": \"<p>x</p>\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 409', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(409));",
+                  "if (pm.response.code !== 409) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
+                  "pm.test('error body has a message', () => pm.expect(pm.response.json().message).to.be.a('string'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3. FILE_UPLOAD",
+      "item": [
+        {
+          "name": "1. Create draft",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"templateName\": \"PM-{{runId}}-FILE\",\n  \"fromIdentityId\": {{fromIdentityId}},\n  \"dataSourceQueryId\": \"{{dataSourceQueryId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(201));",
+                  "if (pm.response.code !== 201) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
+                  "const j = pm.response.json();",
+                  "pm.test('v1 DRAFT, template DRAFT', () => { pm.expect(j.versionNumber).to.eql(1); pm.expect(j.versionStatus).to.eql('DRAFT'); pm.expect(j.templateStatus).to.eql('DRAFT'); });",
+                  "pm.test('pinned to a query version', () => pm.expect(j.dataSourceQueryVersion).to.be.a('number'));",
+                  "pm.collectionVariables.set('tid', j.templateId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2. Verify the query's columns (ca_name, ca_type, status, email, name)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/query-columns",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "query-columns"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "select ca_name, ca_type, status, email, name from em_contact where status=:status\n\nMerge-field and recipient-column names used below come from this response, so a case difference (e.g. EMAIL) doesn't break the run."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
+                  "const j = pm.response.json();",
+                  "const want = {colCaName: 'ca_name', colCaType: 'ca_type', colStatus: 'status', colEmail: 'email', colName: 'name'};",
+                  "const byLower = Object.fromEntries(j.map(c => [c.toLowerCase(), c]));",
+                  "const missing = Object.values(want).filter(w => !(w in byLower));",
+                  "pm.test('query returns all five columns', () => pm.expect(missing, 'query returned: ' + j.join(', ')).to.be.empty);",
+                  "if (missing.length) { pm.execution.setNextRequest(null); }",
+                  "// use the exact spelling/case the query returns (e.g. upper-case on Oracle)",
+                  "Object.entries(want).forEach(([v, w]) => { if (byLower[w]) pm.collectionVariables.set(v, byLower[w]); });",
+                  "pm.collectionVariables.set('queryColumns', j.join(', '));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3. Email content with merge fields (subject + body)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/content",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "content"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"subject\": \"Filing reminder for \\u007b\\u007bca_type\\u007d\\u007d\",\n  \"bodyHtml\": \"<h1>Quarterly Filing Reminder</h1><p>Dear \\u007b\\u007bname\\u007d\\u007d,</p><p>Account <b>\\u007b\\u007bca_name\\u007d\\u007d</b> (status: \\u007b\\u007bstatus\\u007d\\u007d) has a filing due.</p><table><tr><th>Contact</th><th>Email</th></tr><tr><td>\\u007b\\u007bname\\u007d\\u007d</td><td>\\u007b\\u007bemail\\u007d\\u007d</td></tr></table><p>See <a href=\\\"https://www.fdic.gov\\\">fdic.gov</a>.</p>\",\n  \"mergeFields\": [\n    {\n      \"placeholderName\": \"ca_type\",\n      \"sourceColumn\": \"{{colCaType}}\",\n      \"fieldLocation\": \"SUBJECT\"\n    },\n    {\n      \"placeholderName\": \"name\",\n      \"sourceColumn\": \"{{colName}}\",\n      \"fieldLocation\": \"BODY\"\n    },\n    {\n      \"placeholderName\": \"ca_name\",\n      \"sourceColumn\": \"{{colCaName}}\",\n      \"fieldLocation\": \"BODY\"\n    },\n    {\n      \"placeholderName\": \"status\",\n      \"sourceColumn\": \"{{colStatus}}\",\n      \"fieldLocation\": \"BODY\"\n    },\n    {\n      \"placeholderName\": \"email\",\n      \"sourceColumn\": \"{{colEmail}}\",\n      \"fieldLocation\": \"BODY\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
+                  "const j = pm.response.json();",
+                  "pm.test('5 merge fields saved, none broken', () => { pm.expect(j.mergeFields.length).to.eql(5); pm.expect(j.mergeFields.filter(m => m.broken).map(m => m.sourceColumn), 'query returned: ' + pm.collectionVariables.get('queryColumns')).to.be.empty; });",
+                  "pm.test('no merge-field conflict', () => pm.expect(j.hasMergeFieldConflict).to.eql(false));",
+                  "pm.test('formatting kept (heading, table, link)', () => { pm.expect(j.bodyHtml).to.include('<h1>'); pm.expect(j.bodyHtml).to.include('<table'); pm.expect(j.bodyHtml).to.include('href'); });",
+                  "pm.test('placeholders preserved in body', () => pm.expect(j.bodyHtml).to.include('{' + '{ca_name}}'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4. Add attachment (.docx)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/attachments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "attachments"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "sample_attachment.docx"
+                }
+              ]
+            },
+            "description": "Needs Postman's working directory set to postman/sample-files."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
+                  "const j = pm.response.json();",
+                  "pm.test('attachment listed', () => pm.expect(j.attachmentFileNames).to.include('sample_attachment.docx'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "5. Select a sheet before uploading a file -> 409",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/recipients/file/sheet",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "recipients",
+                "file",
+                "sheet"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sheetName\": \"Sheet1\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 409', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(409));",
+                  "if (pm.response.code !== 409) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
+                  "pm.test('error body has a message', () => pm.expect(pm.response.json().message).to.be.a('string'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "6. Upload a disallowed type (.exe) -> 400",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/recipients/file",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "recipients",
+                "file"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "bad_attachment.exe"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 400', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(400));",
+                  "if (pm.response.code !== 400) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
+                  "pm.test('error body has a message', () => pm.expect(pm.response.json().message).to.be.a('string'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "7. Upload CSV",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/recipients/file",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "recipients",
+                "file"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "sample_recipients.csv"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
+                  "const j = pm.response.json();",
+                  "pm.test('a CSV is a single sheet named Sheet1', () => pm.expect(j.sheetNames).to.eql(['Sheet1']));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "8. Select the CSV's sheet",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/recipients/file/sheet",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "recipients",
+                "file",
+                "sheet"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sheetName\": \"Sheet1\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
+                  "const j = pm.response.json();",
+                  "pm.test('header row returned', () => pm.expect(j.columns).to.include.members(['Recipient Name', 'Recipient Email']));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "9. Map CSV columns -> 3 rows parsed, 1 invalid",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/recipients",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "recipients"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"recipientMode\": \"FILE_UPLOAD\",\n  \"recipientEmailColumn\": \"Recipient Email\",\n  \"recipientNameColumn\": \"Recipient Name\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
+                  "const j = pm.response.json();",
+                  "pm.test('3 rows, 1 invalid email', () => { pm.expect(j.recipientFileRowCount).to.eql(3); pm.expect(j.recipientFileInvalidRowCount).to.eql(1); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "10. Re-upload as Excel (.xlsx) - replaces the CSV and its parsed rows",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/recipients/file",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "recipients",
+                "file"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "sample_recipients.xlsx"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
+                  "const j = pm.response.json();",
+                  "pm.test('two sheets', () => pm.expect(j.sheetNames).to.include.members(['Recipients', 'Archive']));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "11. Select sheet 'Recipients'",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/recipients/file/sheet",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "recipients",
+                "file",
+                "sheet"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sheetName\": \"Recipients\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
+                  "const j = pm.response.json();",
+                  "pm.test('header row returned', () => pm.expect(j.columns).to.include.members(['Recipient Name', 'Recipient Email', 'Region']));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "12. Map a column that isn't in the sheet",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/recipients",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "recipients"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"recipientMode\": \"FILE_UPLOAD\",\n  \"recipientEmailColumn\": \"Nope\",\n  \"recipientNameColumn\": \"Recipient Name\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
+                  "const j = pm.response.json();",
+                  "pm.test('mapping conflict flagged', () => pm.expect(j.hasRecipientMappingConflict).to.eql(true));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "13. Submit blocked by the mapping conflict -> 409",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/submit",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "submit"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comments\": \"should be blocked\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 409', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(409));",
+                  "if (pm.response.code !== 409) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
+                  "pm.test('error body has a message', () => pm.expect(pm.response.json().message).to.be.a('string'));",
+                  "pm.test(\"message mentions: uploaded file's sheet 'Recipients'\", () => pm.expect(pm.response.json().message).to.include(\"uploaded file's sheet 'Recipients'\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "14. Map Recipient Name / Recipient Email -> 5 rows parsed, 2 invalid",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/recipients",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "recipients"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"recipientMode\": \"FILE_UPLOAD\",\n  \"recipientEmailColumn\": \"Recipient Email\",\n  \"recipientNameColumn\": \"Recipient Name\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
+                  "const j = pm.response.json();",
+                  "pm.test('file + sheet echoed (Preview: File / Sheet)', () => { pm.expect(j.recipientFileName).to.eql('sample_recipients.xlsx'); pm.expect(j.recipientSheetName).to.eql('Recipients'); });",
+                  "pm.test('mapped columns echoed (Preview: Recipient Name / Email)', () => { pm.expect(j.recipientNameColumn).to.eql('Recipient Name'); pm.expect(j.recipientEmailColumn).to.eql('Recipient Email'); });",
+                  "pm.test('xlsx replaced the CSV rows: 5 parsed, 2 invalid (missing + malformed email)', () => { pm.expect(j.recipientFileRowCount).to.eql(5); pm.expect(j.recipientFileInvalidRowCount).to.eql(2); });",
+                  "pm.test('no conflict', () => pm.expect(j.hasRecipientMappingConflict).to.eql(false));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "15. Preview (what the Preview-and-Submit screen shows)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
+                  "const j = pm.response.json();",
+                  "pm.test('Preview: mode FILE_UPLOAD, still DRAFT, no conflicts', () => { pm.expect(j.recipientMode).to.eql('FILE_UPLOAD'); pm.expect(j.versionStatus).to.eql('DRAFT'); pm.expect(j.hasMergeFieldConflict).to.eql(false); pm.expect(j.hasRecipientMappingConflict).to.eql(false); });",
+                  "pm.test('Preview has the Template Details + Email Contents the screen shows', () => { pm.expect(j.templateName).to.include('PM-'); pm.expect(j.versionNumber).to.eql(1); pm.expect(j.subject).to.include('Filing reminder'); pm.expect(j.attachmentFileNames).to.include('sample_attachment.docx'); });",
+                  "pm.test('Preview shows file, sheet and counts', () => { pm.expect(j.recipientFileName).to.eql('sample_recipients.xlsx'); pm.expect(j.recipientSheetName).to.eql('Recipients'); pm.expect(j.recipientFileRowCount).to.eql(5); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "16. Submit with blank Approval Comments -> 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/submit",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "submit"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comments\": \"  \"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 400', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(400));",
+                  "if (pm.response.code !== 400) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
+                  "pm.test('error body has a message', () => pm.expect(pm.response.json().message).to.be.a('string'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "17. Submit for approval",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/submit",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "submit"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comments\": \"Recipient mode FILE_UPLOAD - ready for review\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
+                  "const j = pm.response.json();",
+                  "pm.test('version PENDING_APPROVAL', () => pm.expect(j.versionStatus).to.eql('PENDING_APPROVAL'));",
+                  "pm.test('Approval Comments saved and echoed', () => pm.expect(j.approvalComments).to.eql(\"Recipient mode FILE_UPLOAD - ready for review\"));",
+                  "pm.test('template itself stays DRAFT until approved', () => pm.expect(j.templateStatus).to.eql('DRAFT'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "18. Change request record exists (approval queue, checker)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/change-requests?changeType=NEW_TEMPLATE&size=200&sort=submittedAt,desc",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "change-requests"
+              ],
+              "query": [
+                {
+                  "key": "changeType",
+                  "value": "NEW_TEMPLATE"
+                },
+                {
+                  "key": "size",
+                  "value": "200"
+                },
+                {
+                  "key": "sort",
+                  "value": "submittedAt,desc"
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{checkerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
+                  "const j = pm.response.json();",
+                  "const hit = j.content.find(c => String(c.templateId) === String(pm.collectionVariables.get('tid')));",
+                  "pm.test('a change request exists for this template', () => pm.expect(hit, 'queue returned ' + j.content.length + ' pending requests, none for template ' + pm.collectionVariables.get('tid')).to.exist);",
+                  "pm.test('NEW_TEMPLATE / PENDING, submitted by the maker', () => { pm.expect(hit.changeType).to.eql('NEW_TEMPLATE'); pm.expect(hit.status).to.eql('PENDING'); pm.expect(hit.submittedBy).to.be.a('string'); });",
+                  "pm.test('Approval Comments stored on the request', () => pm.expect(hit.reason).to.eql(\"Recipient mode FILE_UPLOAD - ready for review\"));",
+                  "pm.test('linked to version 1', () => pm.expect(hit.versionNumber).to.eql(1));",
+                  "pm.collectionVariables.set('crId', hit.changeRequestId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "19. Template detail after submit",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
+                  "const j = pm.response.json();",
+                  "pm.test('PENDING_APPROVAL and not yet active', () => { pm.expect(j.versionStatus).to.eql('PENDING_APPROVAL'); pm.expect(j.templateStatus).to.eql('DRAFT'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "20. Cannot edit while pending -> 409",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/content",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "content"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"subject\": \"x\",\n  \"bodyHtml\": \"<p>x</p>\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 409', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(409));",
+                  "if (pm.response.code !== 409) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
+                  "pm.test('error body has a message', () => pm.expect(pm.response.json().message).to.be.a('string'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "4. DEFINE_AT_SEND",
+      "item": [
+        {
+          "name": "1. Create draft",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"templateName\": \"PM-{{runId}}-DAS\",\n  \"fromIdentityId\": {{fromIdentityId}},\n  \"dataSourceQueryId\": \"{{dataSourceQueryId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(201));",
+                  "if (pm.response.code !== 201) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
+                  "const j = pm.response.json();",
+                  "pm.test('v1 DRAFT, template DRAFT', () => { pm.expect(j.versionNumber).to.eql(1); pm.expect(j.versionStatus).to.eql('DRAFT'); pm.expect(j.templateStatus).to.eql('DRAFT'); });",
+                  "pm.test('pinned to a query version', () => pm.expect(j.dataSourceQueryVersion).to.be.a('number'));",
+                  "pm.collectionVariables.set('tid', j.templateId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2. Verify the query's columns (ca_name, ca_type, status, email, name)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/query-columns",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "query-columns"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "select ca_name, ca_type, status, email, name from em_contact where status=:status\n\nMerge-field and recipient-column names used below come from this response, so a case difference (e.g. EMAIL) doesn't break the run."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
+                  "const j = pm.response.json();",
+                  "const want = {colCaName: 'ca_name', colCaType: 'ca_type', colStatus: 'status', colEmail: 'email', colName: 'name'};",
+                  "const byLower = Object.fromEntries(j.map(c => [c.toLowerCase(), c]));",
+                  "const missing = Object.values(want).filter(w => !(w in byLower));",
+                  "pm.test('query returns all five columns', () => pm.expect(missing, 'query returned: ' + j.join(', ')).to.be.empty);",
+                  "if (missing.length) { pm.execution.setNextRequest(null); }",
+                  "// use the exact spelling/case the query returns (e.g. upper-case on Oracle)",
+                  "Object.entries(want).forEach(([v, w]) => { if (byLower[w]) pm.collectionVariables.set(v, byLower[w]); });",
+                  "pm.collectionVariables.set('queryColumns', j.join(', '));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3. Email content with merge fields (subject + body)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/content",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "content"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"subject\": \"Filing reminder for \\u007b\\u007bca_type\\u007d\\u007d\",\n  \"bodyHtml\": \"<h1>Quarterly Filing Reminder</h1><p>Dear \\u007b\\u007bname\\u007d\\u007d,</p><p>Account <b>\\u007b\\u007bca_name\\u007d\\u007d</b> (status: \\u007b\\u007bstatus\\u007d\\u007d) has a filing due.</p><table><tr><th>Contact</th><th>Email</th></tr><tr><td>\\u007b\\u007bname\\u007d\\u007d</td><td>\\u007b\\u007bemail\\u007d\\u007d</td></tr></table><p>See <a href=\\\"https://www.fdic.gov\\\">fdic.gov</a>.</p>\",\n  \"mergeFields\": [\n    {\n      \"placeholderName\": \"ca_type\",\n      \"sourceColumn\": \"{{colCaType}}\",\n      \"fieldLocation\": \"SUBJECT\"\n    },\n    {\n      \"placeholderName\": \"name\",\n      \"sourceColumn\": \"{{colName}}\",\n      \"fieldLocation\": \"BODY\"\n    },\n    {\n      \"placeholderName\": \"ca_name\",\n      \"sourceColumn\": \"{{colCaName}}\",\n      \"fieldLocation\": \"BODY\"\n    },\n    {\n      \"placeholderName\": \"status\",\n      \"sourceColumn\": \"{{colStatus}}\",\n      \"fieldLocation\": \"BODY\"\n    },\n    {\n      \"placeholderName\": \"email\",\n      \"sourceColumn\": \"{{colEmail}}\",\n      \"fieldLocation\": \"BODY\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
+                  "const j = pm.response.json();",
+                  "pm.test('5 merge fields saved, none broken', () => { pm.expect(j.mergeFields.length).to.eql(5); pm.expect(j.mergeFields.filter(m => m.broken).map(m => m.sourceColumn), 'query returned: ' + pm.collectionVariables.get('queryColumns')).to.be.empty; });",
+                  "pm.test('no merge-field conflict', () => pm.expect(j.hasMergeFieldConflict).to.eql(false));",
+                  "pm.test('formatting kept (heading, table, link)', () => { pm.expect(j.bodyHtml).to.include('<h1>'); pm.expect(j.bodyHtml).to.include('<table'); pm.expect(j.bodyHtml).to.include('href'); });",
+                  "pm.test('placeholders preserved in body', () => pm.expect(j.bodyHtml).to.include('{' + '{ca_name}}'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4. Add attachment (.docx)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/attachments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "attachments"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "sample_attachment.docx"
+                }
+              ]
+            },
+            "description": "Needs Postman's working directory set to postman/sample-files."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
+                  "const j = pm.response.json();",
+                  "pm.test('attachment listed', () => pm.expect(j.attachmentFileNames).to.include('sample_attachment.docx'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "5. Recipients: define at email send",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/recipients",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "recipients"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"recipientMode\": \"DEFINE_AT_SEND\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Recipients are chosen later, at send time - nothing to validate at authoring."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
+                  "const j = pm.response.json();",
+                  "pm.test('mode saved', () => pm.expect(j.recipientMode).to.eql('DEFINE_AT_SEND'));",
+                  "pm.test('nothing to map yet: no columns, no file, no conflict', () => { pm.expect(j.recipientEmailColumn).to.not.be.ok; pm.expect(j.recipientFileName).to.not.be.ok; pm.expect(j.hasRecipientMappingConflict).to.eql(false); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "6. Preview (what the Preview-and-Submit screen shows)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
+                  "const j = pm.response.json();",
+                  "pm.test('Preview: mode DEFINE_AT_SEND, still DRAFT, no conflicts', () => { pm.expect(j.recipientMode).to.eql('DEFINE_AT_SEND'); pm.expect(j.versionStatus).to.eql('DRAFT'); pm.expect(j.hasMergeFieldConflict).to.eql(false); pm.expect(j.hasRecipientMappingConflict).to.eql(false); });",
+                  "pm.test('Preview has the Template Details + Email Contents the screen shows', () => { pm.expect(j.templateName).to.include('PM-'); pm.expect(j.versionNumber).to.eql(1); pm.expect(j.subject).to.include('Filing reminder'); pm.expect(j.attachmentFileNames).to.include('sample_attachment.docx'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "7. Submit with blank Approval Comments -> 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/submit",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "submit"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comments\": \"  \"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 400', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(400));",
+                  "if (pm.response.code !== 400) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
+                  "pm.test('error body has a message', () => pm.expect(pm.response.json().message).to.be.a('string'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "8. Submit for approval",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/submit",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "submit"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comments\": \"Recipient mode DEFINE_AT_SEND - ready for review\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
+                  "const j = pm.response.json();",
+                  "pm.test('version PENDING_APPROVAL', () => pm.expect(j.versionStatus).to.eql('PENDING_APPROVAL'));",
+                  "pm.test('Approval Comments saved and echoed', () => pm.expect(j.approvalComments).to.eql(\"Recipient mode DEFINE_AT_SEND - ready for review\"));",
+                  "pm.test('template itself stays DRAFT until approved', () => pm.expect(j.templateStatus).to.eql('DRAFT'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "9. Change request record exists (approval queue, checker)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/change-requests?changeType=NEW_TEMPLATE&size=200&sort=submittedAt,desc",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "change-requests"
+              ],
+              "query": [
+                {
+                  "key": "changeType",
+                  "value": "NEW_TEMPLATE"
+                },
+                {
+                  "key": "size",
+                  "value": "200"
+                },
+                {
+                  "key": "sort",
+                  "value": "submittedAt,desc"
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{checkerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
+                  "const j = pm.response.json();",
+                  "const hit = j.content.find(c => String(c.templateId) === String(pm.collectionVariables.get('tid')));",
+                  "pm.test('a change request exists for this template', () => pm.expect(hit, 'queue returned ' + j.content.length + ' pending requests, none for template ' + pm.collectionVariables.get('tid')).to.exist);",
+                  "pm.test('NEW_TEMPLATE / PENDING, submitted by the maker', () => { pm.expect(hit.changeType).to.eql('NEW_TEMPLATE'); pm.expect(hit.status).to.eql('PENDING'); pm.expect(hit.submittedBy).to.be.a('string'); });",
+                  "pm.test('Approval Comments stored on the request', () => pm.expect(hit.reason).to.eql(\"Recipient mode DEFINE_AT_SEND - ready for review\"));",
+                  "pm.test('linked to version 1', () => pm.expect(hit.versionNumber).to.eql(1));",
+                  "pm.collectionVariables.set('crId', hit.changeRequestId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "10. Template detail after submit",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
+                  "const j = pm.response.json();",
+                  "pm.test('PENDING_APPROVAL and not yet active', () => { pm.expect(j.versionStatus).to.eql('PENDING_APPROVAL'); pm.expect(j.templateStatus).to.eql('DRAFT'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "11. Cannot edit while pending -> 409",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/content",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "content"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"subject\": \"x\",\n  \"bodyHtml\": \"<p>x</p>\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 409', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(409));",
+                  "if (pm.response.code !== 409) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
+                  "pm.test('error body has a message', () => pm.expect(pm.response.json().message).to.be.a('string'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "runId",
+      "value": ""
+    },
+    {
+      "key": "tid",
+      "value": ""
+    },
+    {
+      "key": "crId",
+      "value": ""
+    },
+    {
+      "key": "queryColumns",
+      "value": ""
+    },
+    {
+      "key": "colCaName",
+      "value": ""
+    },
+    {
+      "key": "colCaType",
+      "value": ""
+    },
+    {
+      "key": "colStatus",
+      "value": ""
+    },
+    {
+      "key": "colEmail",
+      "value": ""
+    },
+    {
+      "key": "colName",
+      "value": ""
+    }
+  ]
+}
