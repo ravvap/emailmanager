@@ -200,6 +200,11 @@ public class EmailTemplateController {
         return ResponseEntity.ok(emailTemplateService.reassignOwner(templateId, newOwnerUserId, currentUser));
     }
 
+    @GetMapping("/{templateId}/query-columns")
+    public ResponseEntity<List<String>> getQueryColumns(@PathVariable Long templateId) {
+        return ResponseEntity.ok(emailTemplateService.getQueryColumns(templateId));
+    }
+
     @GetMapping("/{templateId}")
     public ResponseEntity<EmailTemplateDetailResponse> getById(@PathVariable Long templateId) {
         return ResponseEntity.ok(emailTemplateService.getById(templateId));

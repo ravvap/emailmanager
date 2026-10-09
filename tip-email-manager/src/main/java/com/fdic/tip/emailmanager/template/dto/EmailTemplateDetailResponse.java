@@ -27,6 +27,8 @@ public class EmailTemplateDetailResponse {
     UUID dataSourceQueryId;
     Integer dataSourceQueryVersion;
     Boolean hasMergeFieldConflict;
+    Boolean hasRecipientMappingConflict;
+    List<MergeFieldResponse> mergeFields;
     Integer newerQueryVersionAvailable;
 
     String subject;

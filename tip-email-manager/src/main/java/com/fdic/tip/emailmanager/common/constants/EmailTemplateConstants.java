@@ -23,7 +23,9 @@ public final class EmailTemplateConstants {
     public static final String MSG_VERSION_NOT_FOUND = "Email template version not found.";
     public static final String MSG_NOT_EDITABLE = "This template version is not editable in its current status.";
     public static final String MSG_MERGE_FIELD_CONFLICT =
-            "One or more merge fields reference a column no longer returned by the pinned query version. Resolve before submitting.";
+            "Cannot submit: merge fields not returned by query version %d: %s. Pick them again from the query's column list.";
+    public static final String MSG_RECIPIENT_MAPPING_CONFLICT =
+            "Cannot submit: the recipient column mapping (email=%s, name=%s) does not match the columns of the %s.";
     public static final String MSG_UNAUTHORIZED_QUERY =
             "You are not authorized to reference this data source query.";
     public static final String MSG_ATTACHMENT_TOO_LARGE = "Attachment exceeds the maximum allowed size of 10MB.";

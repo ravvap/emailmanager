@@ -61,12 +61,10 @@ public class EmailTemplateVersion {
     @Column(name = "subject", length = 255, nullable = false)
     private String subject;
 
-    @Lob
-    @Column(name = "body_html", nullable = false)
+    @Column(name = "body_html", columnDefinition = "text", nullable = false)
     private String bodyHtml;
 
-    @Lob
-    @Column(name = "body_plain_text", nullable = false)
+    @Column(name = "body_plain_text", columnDefinition = "text", nullable = false)
     private String bodyPlainText;
 
     @Column(name = "body_size_bytes", nullable = false)

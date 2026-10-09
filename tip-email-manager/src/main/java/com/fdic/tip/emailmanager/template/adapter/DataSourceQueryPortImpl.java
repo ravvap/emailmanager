@@ -1,6 +1,8 @@
 package com.fdic.tip.emailmanager.template.adapter;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fdic.tip.emailmanager.common.constants.DataSourceQueryConstants;
+import lombok.extern.slf4j.Slf4j;
 import com.fdic.tip.emailmanager.template.service.DataSourceQueryPort;
 import jakarta.persistence.EntityNotFoundException;
 import org.springframework.beans.factory.annotation.Value;
@@ -11,6 +13,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -37,6 +40,7 @@ import java.util.UUID;
  * confirmed; as written it under-enforces rather than silently
  * over-enforcing.
  */
+@Slf4j
 @Component
 public class DataSourceQueryPortImpl implements DataSourceQueryPort {
 
@@ -80,12 +84,52 @@ public class DataSourceQueryPortImpl implements DataSourceQueryPort {
     public List<String> getColumns(UUID dataSourceQueryId, int queryVersion) {
         UUID rowId = resolveRowId(dataSourceQueryId, queryVersion);
         try {
-            String[] columns = restTemplate.getForObject(
-                    columnsEndpointBaseUrl + "/{id}/columns", String[].class, rowId);
-            return columns == null ? List.of() : List.of(columns);
+            JsonNode body = restTemplate.getForObject(columnsEndpointBaseUrl + "/{id}/columns", JsonNode.class, rowId);
+            List<String> columns = extractColumnNames(body);
+            if (columns.isEmpty()) {
+                log.warn("Columns endpoint returned no column names for query {} v{} (row {}); raw response: {}",
+                        dataSourceQueryId, queryVersion, rowId, body);
+            }
+            return columns;
         } catch (RestClientException ex) {
+            log.error("Columns endpoint call failed for query {} v{} (row {}) at {}: {}",
+                    dataSourceQueryId, queryVersion, rowId, columnsEndpointBaseUrl, ex.getMessage());
             throw new IllegalStateException(DataSourceQueryConstants.MSG_COLUMNS_FETCH_FAILED, ex);
         }
+    }
+
+    /**
+     * The columns endpoint's exact response shape wasn't known when this was
+     * written, so accept the common ones: ["a","b"], [{"name":"a"}, ...]
+     * (name / columnName / column_name / column / label), or an object
+     * wrapping either under columns / data / content / result.
+     */
+    private List<String> extractColumnNames(JsonNode node) {
+        List<String> names = new ArrayList<>();
+        if (node == null || node.isNull()) {
+            return names;
+        }
+        if (node.isArray()) {
+            for (JsonNode element : node) {
+                if (element.isTextual()) {
+                    names.add(element.asText());
+                } else if (element.isObject()) {
+                    for (String key : new String[]{"name", "columnName", "column_name", "column", "label"}) {
+                        if (element.hasNonNull(key)) {
+                            names.add(element.get(key).asText());
+                            break;
+                        }
+                    }
+                }
+            }
+        } else if (node.isObject()) {
+            for (String key : new String[]{"columns", "data", "content", "result"}) {
+                if (node.has(key)) {
+                    return extractColumnNames(node.get(key));
+                }
+            }
+        }
+        return names;
     }
 
     /** Resolves the (asset_id, version) pair we store to the row's own id, which the columns endpoint addresses by. */

@@ -73,6 +73,9 @@ public interface EmailTemplateService {
      */
     void deleteTemplate(Long templateId, String currentUser);
 
+    /** Columns of the query version this template is pinned to — the merge-field picker's list. */
+    List<String> getQueryColumns(Long templateId);
+
     EmailTemplateDetailResponse getById(Long templateId);
 
     /** roles drives Analyst scoping: Analysts only see ACTIVE templates. */

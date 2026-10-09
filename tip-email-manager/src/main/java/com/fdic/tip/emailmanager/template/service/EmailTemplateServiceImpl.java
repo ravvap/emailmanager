@@ -393,10 +393,17 @@ public class EmailTemplateServiceImpl implements EmailTemplateService {
 
         ensureNoPendingChange(templateId);
         if (Boolean.TRUE.equals(version.getHasMergeFieldConflict())) {
-            throw new IllegalStateException(EmailTemplateConstants.MSG_MERGE_FIELD_CONFLICT);
+            String broken = mergeFieldRepository.findByTemplateVersion_TemplateVersionIdAndIsBrokenTrue(version.getTemplateVersionId())
+                    .stream().map(EmailTemplateMergeField::getSourceColumn).distinct().collect(Collectors.joining(", "));
+            throw new IllegalStateException(String.format(EmailTemplateConstants.MSG_MERGE_FIELD_CONFLICT,
+                    version.getDataSourceQueryVersion(), broken));
         }
         if (Boolean.TRUE.equals(version.getHasRecipientMappingConflict())) {
-            throw new IllegalStateException(EmailTemplateConstants.MSG_MERGE_FIELD_CONFLICT);
+            String source = version.getRecipientMode() == RecipientMode.FILE_UPLOAD
+                    ? "uploaded file's sheet '" + version.getRecipientSheetName() + "'"
+                    : "pinned data source query version " + version.getDataSourceQueryVersion();
+            throw new IllegalStateException(String.format(EmailTemplateConstants.MSG_RECIPIENT_MAPPING_CONFLICT,
+                    version.getRecipientEmailColumn(), version.getRecipientNameColumn(), source));
         }
         // Belt-and-suspenders alongside @NotBlank on the DTO — same
         // pattern as the rest of this method's validation, not relying on
@@ -697,6 +704,16 @@ public class EmailTemplateServiceImpl implements EmailTemplateService {
         return toChangeRequestResponse(cr);
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public List<String> getQueryColumns(Long templateId) {
+        EmailTemplateVersion version = getTemplateOrThrow(templateId).getCurrentVersion();
+        if (version == null) {
+            throw new EntityNotFoundException(EmailTemplateConstants.MSG_VERSION_NOT_FOUND);
+        }
+        return dataSourceQueryPort.getColumns(version.getDataSourceQueryId(), version.getDataSourceQueryVersion());
+    }
+
     // ===================================================================
     // Delete (soft) — distinct from Retire, not a maker-checker action
     // ===================================================================
@@ -927,6 +944,12 @@ public class EmailTemplateServiceImpl implements EmailTemplateService {
                     .dataSourceQueryId(version.getDataSourceQueryId())
                     .dataSourceQueryVersion(version.getDataSourceQueryVersion())
                     .hasMergeFieldConflict(version.getHasMergeFieldConflict())
+                    .hasRecipientMappingConflict(version.getHasRecipientMappingConflict())
+                    .mergeFields(mergeFieldRepository.findByTemplateVersion_TemplateVersionId(version.getTemplateVersionId()).stream()
+                            .map(mf -> MergeFieldResponse.builder().placeholderName(mf.getPlaceholderName())
+                                    .sourceColumn(mf.getSourceColumn()).fieldLocation(mf.getFieldLocation())
+                                    .broken(Boolean.TRUE.equals(mf.getIsBroken())).build())
+                            .collect(Collectors.toList()))
                     .newerQueryVersionAvailable(version.getNewerQueryVersionAvailable())
                     .subject(version.getSubject())
                     .bodyHtml(version.getBodyHtml())
