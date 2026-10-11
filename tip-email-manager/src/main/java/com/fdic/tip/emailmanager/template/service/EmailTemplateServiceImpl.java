@@ -138,6 +138,13 @@ public class EmailTemplateServiceImpl implements EmailTemplateService {
         version.setRecipientMode(request.getRecipientMode());
         version.setRecipientEmailColumn(request.getRecipientEmailColumn());
         version.setRecipientNameColumn(request.getRecipientNameColumn());
+        // Leaving FILE_UPLOAD drops the uploaded file, its sheet and (below) its parsed rows —
+        // otherwise a stale file would be carried into every later version.
+        if (request.getRecipientMode() != RecipientMode.FILE_UPLOAD) {
+            version.setRecipientFileName(null);
+            version.setRecipientFileContent(null);
+            version.setRecipientSheetName(null);
+        }
 
         // FIX: column-mapping validation now branches by mode instead of
         // always checking against the pinned query's columns. Only
@@ -548,6 +555,9 @@ public class EmailTemplateServiceImpl implements EmailTemplateService {
         if (a.getRecipientMode() != b.getRecipientMode()) changed.add("recipientMode");
         if (!Objects.equals(a.getRecipientEmailColumn(), b.getRecipientEmailColumn())) changed.add("recipientEmailColumn");
         if (!Objects.equals(a.getRecipientNameColumn(), b.getRecipientNameColumn())) changed.add("recipientNameColumn");
+        if (!Objects.equals(a.getRecipientFileName(), b.getRecipientFileName())) changed.add("recipientFileName");
+        if (!Objects.equals(a.getRecipientSheetName(), b.getRecipientSheetName())) changed.add("recipientSheetName");
+        if (!selectionKeys(a).equals(selectionKeys(b))) changed.add("recipientSelection");
         if (!Objects.equals(a.getDataSourceQueryVersion(), b.getDataSourceQueryVersion())) changed.add("dataSourceQueryVersion");
         if (!attachmentNames(a).equals(attachmentNames(b))) changed.add("attachments");
 
@@ -844,6 +854,12 @@ public class EmailTemplateServiceImpl implements EmailTemplateService {
         return fileName.substring(fileName.lastIndexOf('.') + 1);
     }
 
+    private Set<String> selectionKeys(EmailTemplateVersion version) {
+        return selectionsOf(version).stream()
+                .map(sel -> sel.getDistributionListId() != null ? "L" + sel.getDistributionListId() : "C" + sel.getContactId())
+                .collect(Collectors.toSet());
+    }
+
     private Set<String> attachmentNames(EmailTemplateVersion version) {
         return version.getAttachments().stream().map(EmailTemplateAttachment::getFileName).collect(Collectors.toSet());
     }
@@ -931,6 +947,12 @@ public class EmailTemplateServiceImpl implements EmailTemplateService {
                 .build());
     }
 
+    private List<EmailTemplateRecipientSelection> selectionsOf(EmailTemplateVersion version) {
+        return version.getRecipientMode() == RecipientMode.CONTACT_DISTRIBUTION_LIST
+                ? recipientSelectionRepository.findByTemplateVersion_TemplateVersionId(version.getTemplateVersionId())
+                : List.of();
+    }
+
     private EmailTemplateDetailResponse toDetailResponse(EmailTemplate template, EmailTemplateVersion version) {
         EmailTemplateDetailResponse.EmailTemplateDetailResponseBuilder builder = EmailTemplateDetailResponse.builder()
                 .templateId(template.getTemplateId())
@@ -956,6 +978,10 @@ public class EmailTemplateServiceImpl implements EmailTemplateService {
                     .recipientMode(version.getRecipientMode())
                     .recipientEmailColumn(version.getRecipientEmailColumn())
                     .recipientNameColumn(version.getRecipientNameColumn())
+                    .selectedDistributionListIds(selectionsOf(version).stream()
+                            .map(EmailTemplateRecipientSelection::getDistributionListId).filter(Objects::nonNull).collect(Collectors.toList()))
+                    .selectedContactIds(selectionsOf(version).stream()
+                            .map(EmailTemplateRecipientSelection::getContactId).filter(Objects::nonNull).collect(Collectors.toList()))
                     .recipientFileName(version.getRecipientFileName())
                     .recipientSheetName(version.getRecipientSheetName())
                     .recipientFileRowCount(version.getRecipientMode() == RecipientMode.FILE_UPLOAD
@@ -964,7 +990,9 @@ public class EmailTemplateServiceImpl implements EmailTemplateService {
                     .recipientFileInvalidRowCount(version.getRecipientMode() == RecipientMode.FILE_UPLOAD
                             ? (int) fileRecipientRepository.countByTemplateVersion_TemplateVersionIdAndIsValidFalse(version.getTemplateVersionId())
                             : null)
-                    .attachmentFileNames(version.getAttachments().stream()
+                    // from the repository, not version.getAttachments(): a version just built by
+                    // copyVersionContent (edit/restore) has an empty in-memory list until reloaded
+                    .attachmentFileNames(attachmentRepository.findByTemplateVersion_TemplateVersionId(version.getTemplateVersionId()).stream()
                             .map(EmailTemplateAttachment::getFileName).collect(Collectors.toList()));
 
             // FIX: Approval Comments (and, once decided, the reviewer's

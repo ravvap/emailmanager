@@ -47,7 +47,10 @@ public class EmailTemplateDetailResponse {
     Integer recipientFileInvalidRowCount;
 
     List<String> attachmentFileNames;
-    List<String> selectedRecipientNames;
+    // CONTACT_DISTRIBUTION_LIST mode: what is currently selected (empty for other modes) —
+    // lets the Recipients step pre-fill when a draft is opened for edit.
+    List<Long> selectedDistributionListIds;
+    List<Long> selectedContactIds;
 
     // The current/most-recent change request for this version, if one
     // exists — carries the Preview-and-Submit screen's "Approval Comments"

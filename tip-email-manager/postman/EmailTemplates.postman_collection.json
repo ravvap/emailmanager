@@ -1,6 +1,6 @@
 {
   "info": {
-    "_postman_id": "a0091255-ec49-46c9-9d41-37604cde305f",
+    "_postman_id": "6ad6cd1c-df61-4bb5-b3ee-b14e6312276b",
     "name": "TIP Email Manager - Email Templates (EM-8 to EM-13)",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
     "description": "End-to-end tests for template authoring, edit, retire/reactivate, history/compare, restore, delete and maker-checker approval.\n\nRun the folders in order with the Collection Runner (they share state). Needs four users: maker, checker (Sr. Analyst/Manager), analyst, manager - set their JWTs in the environment.\nThe maker and checker MUST be different users (self-approval is blocked). Upload steps use files from postman/sample-files; set Postman's working directory to that folder."
@@ -68,12 +68,64 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 201', () => pm.response.to.have.status(201));",
+                  "pm.test('status is 201', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(201));",
+                  "if (pm.response.code !== 201) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
                   "const j = pm.response.json();",
                   "pm.test('version 1 is a DRAFT', () => { pm.expect(j.versionNumber).to.eql(1); pm.expect(j.versionStatus).to.eql('DRAFT'); });",
                   "pm.test('template is DRAFT', () => pm.expect(j.templateStatus).to.eql('DRAFT'));",
                   "pm.test('query pinned to a version', () => pm.expect(j.dataSourceQueryVersion).to.be.a('number'));",
                   "pm.collectionVariables.set('tid', j.templateId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "A1b Discover the pinned query's real columns (sets email / name / merge column)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/templates/{{tid}}/query-columns",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "email-manager",
+                "templates",
+                "{{tid}}",
+                "query-columns"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{makerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Same column list the Email Content screen's merge-field picker shows. Removes the need to guess column names."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
+                  "const j = pm.response.json();",
+                  "pm.test('query returns at least one column', () => pm.expect(j, 'columns endpoint returned nothing - check columns-endpoint-base-url / the query').to.be.an('array').that.is.not.empty);",
+                  "const pick = (re, fallback) => j.find(c => re.test(c)) || fallback;",
+                  "const email = pick(/e-?mail/i, null), name = pick(/name/i, j[0]);",
+                  "pm.test('query has an email-like column (needed for DATA_SOURCE_QUERY steps)', () => pm.expect(email, 'columns: ' + j.join(', ')).to.be.a('string'));",
+                  "pm.collectionVariables.set('emailColumn', email); pm.collectionVariables.set('nameColumn', name); pm.collectionVariables.set('mergeColumn', name);",
+                  "console.log('query columns:', j.join(', '), '| email=' + email, 'name=' + name);"
                 ]
               }
             }
@@ -128,7 +180,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('status is 400', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(400));",
+                  "if (pm.response.code !== 400) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
                   "pm.test('error body has a message', () => pm.expect(pm.response.json().message).to.be.a('string'));"
                 ]
               }
@@ -185,9 +238,11 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
                   "const j = pm.response.json();",
-                  "pm.test('hasMergeFieldConflict is true', () => pm.expect(j.hasMergeFieldConflict).to.eql(true));"
+                  "pm.test('hasMergeFieldConflict is true', () => pm.expect(j.hasMergeFieldConflict).to.eql(true));",
+                  "pm.test('the broken merge field is reported', () => pm.expect(j.mergeFields.filter(m => m.broken).map(m => m.sourceColumn)).to.include('no_such_column_xyz'));"
                 ]
               }
             }
@@ -243,8 +298,10 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 409', () => pm.response.to.have.status(409));",
-                  "pm.test('error body has a message', () => pm.expect(pm.response.json().message).to.be.a('string'));"
+                  "pm.test('status is 409', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(409));",
+                  "if (pm.response.code !== 409) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
+                  "pm.test('error body has a message', () => pm.expect(pm.response.json().message).to.be.a('string'));",
+                  "pm.test('names the broken column', () => pm.expect(pm.response.json().message).to.include('no_such_column_xyz'));"
                 ]
               }
             }
@@ -300,9 +357,11 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
                   "const j = pm.response.json();",
-                  "pm.test('conflict cleared', () => pm.expect(j.hasMergeFieldConflict).to.eql(false));",
+                  "pm.test('conflict cleared (no broken merge fields)', () => pm.expect(j.mergeFields.filter(m => m.broken), 'merge column not in query - see A1b').to.be.empty);",
+                  "pm.test('hasMergeFieldConflict is false', () => pm.expect(j.hasMergeFieldConflict).to.eql(false));",
                   "pm.test('<script> removed by sanitizer', () => pm.expect(j.bodyHtml).to.not.include('<script'));",
                   "pm.test('onclick removed by sanitizer', () => pm.expect(j.bodyHtml).to.not.include('onclick'));",
                   "pm.test('allowed structure kept (heading, table, link)', () => { pm.expect(j.bodyHtml).to.include('<h1>'); pm.expect(j.bodyHtml).to.include('<table'); pm.expect(j.bodyHtml).to.include('href'); });"
@@ -370,7 +429,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('status is 400', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(400));",
+                  "if (pm.response.code !== 400) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
                   "pm.test('error body has a message', () => pm.expect(pm.response.json().message).to.be.a('string'));"
                 ]
               }
@@ -424,7 +484,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
                   "const j = pm.response.json();",
                   "pm.test('attachment listed', () => pm.expect(j.attachmentFileNames).to.include('sample_attachment.docx'));"
                 ]
@@ -478,7 +539,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('status is 400', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(400));",
+                  "if (pm.response.code !== 400) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
                   "pm.test('error body has a message', () => pm.expect(pm.response.json().message).to.be.a('string'));"
                 ]
               }
@@ -536,7 +598,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('status is 400', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(400));",
+                  "if (pm.response.code !== 400) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
                   "pm.test('error body has a message', () => pm.expect(pm.response.json().message).to.be.a('string'));"
                 ]
               }
@@ -593,7 +656,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
                   "const j = pm.response.json();",
                   "pm.test('mode saved', () => pm.expect(j.recipientMode).to.eql('CONTACT_DISTRIBUTION_LIST'));"
                 ]
@@ -651,7 +715,10 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));"
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
+                  "const j = pm.response.json();",
+                  "pm.test('hasRecipientMappingConflict is true', () => pm.expect(j.hasRecipientMappingConflict).to.eql(true));"
                 ]
               }
             }
@@ -707,8 +774,10 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 409', () => pm.response.to.have.status(409));",
-                  "pm.test('error body has a message', () => pm.expect(pm.response.json().message).to.be.a('string'));"
+                  "pm.test('status is 409', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(409));",
+                  "if (pm.response.code !== 409) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
+                  "pm.test('error body has a message', () => pm.expect(pm.response.json().message).to.be.a('string'));",
+                  "pm.test('message is about the recipient mapping, not merge fields', () => pm.expect(pm.response.json().message).to.include('recipient column mapping'));"
                 ]
               }
             }
@@ -764,9 +833,10 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
                   "const j = pm.response.json();",
-                  "pm.test('mapping saved', () => pm.expect(j.recipientEmailColumn).to.eql(pm.environment.get('emailColumn') || pm.collectionVariables.get('emailColumn')));"
+                  "pm.test('mapping saved, no conflict', () => { pm.expect(j.recipientEmailColumn).to.eql(pm.collectionVariables.get('emailColumn')); pm.expect(j.hasRecipientMappingConflict).to.eql(false); });"
                 ]
               }
             }
@@ -822,7 +892,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
                   "const j = pm.response.json();",
                   "pm.test('mode saved', () => pm.expect(j.recipientMode).to.eql('DEFINE_AT_SEND'));"
                 ]
@@ -882,7 +953,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 409', () => pm.response.to.have.status(409));",
+                  "pm.test('status is 409', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(409));",
+                  "if (pm.response.code !== 409) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
                   "pm.test('error body has a message', () => pm.expect(pm.response.json().message).to.be.a('string'));"
                 ]
               }
@@ -936,7 +1008,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('status is 400', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(400));",
+                  "if (pm.response.code !== 400) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
                   "pm.test('error body has a message', () => pm.expect(pm.response.json().message).to.be.a('string'));"
                 ]
               }
@@ -991,7 +1064,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
                   "const j = pm.response.json();",
                   "pm.test('sheet names returned', () => pm.expect(j.sheetNames).to.include.members(['Recipients', 'Archive']));"
                 ]
@@ -1051,7 +1125,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('status is 400', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(400));",
+                  "if (pm.response.code !== 400) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
                   "pm.test('error body has a message', () => pm.expect(pm.response.json().message).to.be.a('string'));"
                 ]
               }
@@ -1110,7 +1185,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
                   "const j = pm.response.json();",
                   "pm.test('header columns returned', () => pm.expect(j.columns).to.include.members(['Recipient Name', 'Recipient Email', 'Region']));"
                 ]
@@ -1168,7 +1244,10 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));"
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
+                  "const j = pm.response.json();",
+                  "pm.test('hasRecipientMappingConflict is true', () => pm.expect(j.hasRecipientMappingConflict).to.eql(true));"
                 ]
               }
             }
@@ -1224,7 +1303,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 409', () => pm.response.to.have.status(409));",
+                  "pm.test('status is 409', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(409));",
+                  "if (pm.response.code !== 409) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
                   "pm.test('error body has a message', () => pm.expect(pm.response.json().message).to.be.a('string'));"
                 ]
               }
@@ -1281,9 +1361,11 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
                   "const j = pm.response.json();",
                   "pm.test('file/sheet echoed', () => { pm.expect(j.recipientFileName).to.eql('sample_recipients.xlsx'); pm.expect(j.recipientSheetName).to.eql('Recipients'); });",
+                  "pm.test('no conflicts before submit', () => { pm.expect(j.hasRecipientMappingConflict).to.eql(false); pm.expect(j.hasMergeFieldConflict).to.eql(false); });",
                   "pm.test('5 data rows parsed', () => pm.expect(j.recipientFileRowCount).to.eql(5));",
                   "pm.test('2 invalid rows flagged (missing + malformed email)', () => pm.expect(j.recipientFileInvalidRowCount).to.eql(2));"
                 ]
@@ -1341,7 +1423,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('status is 400', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(400));",
+                  "if (pm.response.code !== 400) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
                   "pm.test('error body has a message', () => pm.expect(pm.response.json().message).to.be.a('string'));"
                 ]
               }
@@ -1407,7 +1490,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('status is 400', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(400));",
+                  "if (pm.response.code !== 400) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
                   "pm.test('error body has a message', () => pm.expect(pm.response.json().message).to.be.a('string'));"
                 ]
               }
@@ -1464,7 +1548,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
                   "const j = pm.response.json();",
                   "pm.test('version is PENDING_APPROVAL', () => pm.expect(j.versionStatus).to.eql('PENDING_APPROVAL'));",
                   "pm.test('Approval Comments echoed back', () => pm.expect(j.approvalComments).to.eql('Q3 reminder, ready for review'));",
@@ -1524,7 +1609,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 409', () => pm.response.to.have.status(409));",
+                  "pm.test('status is 409', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(409));",
+                  "if (pm.response.code !== 409) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
                   "pm.test('error body has a message', () => pm.expect(pm.response.json().message).to.be.a('string'));"
                 ]
               }
@@ -1581,7 +1667,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 409', () => pm.response.to.have.status(409));",
+                  "pm.test('status is 409', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(409));",
+                  "if (pm.response.code !== 409) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
                   "pm.test('error body has a message', () => pm.expect(pm.response.json().message).to.be.a('string'));"
                 ]
               }
@@ -1637,7 +1724,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
                   "const j = pm.response.json();",
                   "const hit = j.content.find(c => String(c.templateId) === String(pm.collectionVariables.get('tid')) && c.changeType === 'NEW_TEMPLATE');",
                   "pm.test('pending NEW_TEMPLATE request for this template is in the queue', () => pm.expect(hit).to.exist);",
@@ -1699,7 +1787,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 403', () => pm.response.to.have.status(403));",
+                  "pm.test('status is 403', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(403));",
+                  "if (pm.response.code !== 403) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
                   "pm.test('error body has a message', () => pm.expect(pm.response.json().message).to.be.a('string'));"
                 ]
               }
@@ -1758,7 +1847,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 403', () => pm.response.to.have.status(403));",
+                  "pm.test('status is 403', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(403));",
+                  "if (pm.response.code !== 403) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
                   "pm.test('error body has a message', () => pm.expect(pm.response.json().message).to.be.a('string'));"
                 ]
               }
@@ -1816,7 +1906,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
                   "const j = pm.response.json();",
                   "pm.test('APPROVED', () => pm.expect(j.status).to.eql('APPROVED'));",
                   "pm.test('decided by someone else', () => pm.expect(j.decidedBy).to.not.eql(j.submittedBy));"
@@ -1876,7 +1967,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 409', () => pm.response.to.have.status(409));",
+                  "pm.test('status is 409', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(409));",
+                  "if (pm.response.code !== 409) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
                   "pm.test('error body has a message', () => pm.expect(pm.response.json().message).to.be.a('string'));"
                 ]
               }
@@ -1918,7 +2010,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
                   "const j = pm.response.json();",
                   "pm.test('template ACTIVE', () => pm.expect(j.templateStatus).to.eql('ACTIVE'));",
                   "pm.test('v1 ACTIVE', () => { pm.expect(j.versionNumber).to.eql(1); pm.expect(j.versionStatus).to.eql('ACTIVE'); });",
@@ -1970,7 +2063,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
                   "const j = pm.response.json();",
                   "pm.test('v2 DRAFT', () => { pm.expect(j.versionNumber).to.eql(2); pm.expect(j.versionStatus).to.eql('DRAFT'); });",
                   "pm.test('subject carried over', () => pm.expect(j.subject).to.eql('Action needed: Q3 filing due'));",
@@ -2017,7 +2111,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 409', () => pm.response.to.have.status(409));",
+                  "pm.test('status is 409', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(409));",
+                  "if (pm.response.code !== 409) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
                   "pm.test('error body has a message', () => pm.expect(pm.response.json().message).to.be.a('string'));"
                 ]
               }
@@ -2060,7 +2155,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
                   "const j = pm.response.json();",
                   "pm.test('no conflicts after adopt (assuming same columns)', () => pm.expect(j.hasMergeFieldConflict).to.eql(false));"
                 ]
@@ -2118,7 +2214,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
                   "const j = pm.response.json();",
                   "pm.test('subject updated', () => pm.expect(j.subject).to.eql('EDITED v2: Q3 filing due'));"
                 ]
@@ -2176,7 +2273,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
                   "const j = pm.response.json();",
                   "pm.test('PENDING_APPROVAL', () => pm.expect(j.versionStatus).to.eql('PENDING_APPROVAL'));"
                 ]
@@ -2220,7 +2318,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
                   "const j = pm.response.json();",
                   "const byNo = Object.fromEntries(j.map(v => [v.versionNumber, v.status]));",
                   "pm.test('v1 ACTIVE, v2 PENDING_APPROVAL', () => { pm.expect(byNo[1]).to.eql('ACTIVE'); pm.expect(byNo[2]).to.eql('PENDING_APPROVAL'); });"
@@ -2278,7 +2377,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
                   "const j = pm.response.json();",
                   "const hit = j.content.find(c => String(c.templateId) === String(pm.collectionVariables.get('tid')) && c.changeType === 'EDIT');",
                   "pm.test('pending EDIT request for this template is in the queue', () => pm.expect(hit).to.exist);",
@@ -2326,7 +2426,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
                   "const j = pm.response.json();",
                   "pm.test('WITHDRAWN', () => pm.expect(j.status).to.eql('WITHDRAWN'));"
                 ]
@@ -2370,7 +2471,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
                   "const j = pm.response.json();",
                   "pm.test('v3', () => pm.expect(j.versionNumber).to.eql(3));"
                 ]
@@ -2428,7 +2530,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));"
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one"
                 ]
               }
             }
@@ -2484,7 +2587,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));"
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one"
                 ]
               }
             }
@@ -2539,7 +2643,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
                   "const j = pm.response.json();",
                   "const hit = j.content.find(c => String(c.templateId) === String(pm.collectionVariables.get('tid')) && c.changeType === 'EDIT');",
                   "pm.test('pending EDIT request for this template is in the queue', () => pm.expect(hit).to.exist);",
@@ -2601,7 +2706,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('status is 400', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(400));",
+                  "if (pm.response.code !== 400) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
                   "pm.test('error body has a message', () => pm.expect(pm.response.json().message).to.be.a('string'));"
                 ]
               }
@@ -2659,7 +2765,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
                   "const j = pm.response.json();",
                   "pm.test('REJECTED', () => pm.expect(j.status).to.eql('REJECTED'));",
                   "pm.test('reason stored', () => pm.expect(j.rejectionReason).to.eql('Wording is unclear'));",
@@ -2705,7 +2812,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
                   "const j = pm.response.json();",
                   "pm.test('v4', () => pm.expect(j.versionNumber).to.eql(4));"
                 ]
@@ -2763,7 +2871,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));"
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one"
                 ]
               }
             }
@@ -2819,7 +2928,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));"
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one"
                 ]
               }
             }
@@ -2874,7 +2984,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
                   "const j = pm.response.json();",
                   "const hit = j.content.find(c => String(c.templateId) === String(pm.collectionVariables.get('tid')) && c.changeType === 'EDIT');",
                   "pm.test('pending EDIT request for this template is in the queue', () => pm.expect(hit).to.exist);",
@@ -2936,7 +3047,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
                   "const j = pm.response.json();",
                   "pm.test('APPROVED', () => pm.expect(j.status).to.eql('APPROVED'));",
                   "pm.collectionVariables.set('v4VersionId', j.templateVersionId);"
@@ -2981,7 +3093,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
                   "const j = pm.response.json();",
                   "const byNo = Object.fromEntries(j.map(v => [v.versionNumber, v]));",
                   "pm.test('v1 SUPERSEDED, v2 WITHDRAWN, v3 REJECTED, v4 ACTIVE', () => { pm.expect(byNo[1].status).to.eql('SUPERSEDED'); pm.expect(byNo[2].status).to.eql('WITHDRAWN'); pm.expect(byNo[3].status).to.eql('REJECTED'); pm.expect(byNo[4].status).to.eql('ACTIVE'); });",
@@ -3038,7 +3151,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
                   "const j = pm.response.json();",
                   "pm.test('subject differs', () => pm.expect(j.changedFields).to.include('subject'));",
                   "pm.test('both snapshots returned', () => { pm.expect(j.versionA.versionNumber).to.eql(1); pm.expect(j.versionB.versionNumber).to.eql(4); });"
@@ -3083,7 +3197,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
                   "const j = pm.response.json();",
                   "pm.test('single entry, the active version', () => { pm.expect(j.length).to.eql(1); pm.expect(j[0].status).to.eql('ACTIVE'); });"
                 ]
@@ -3138,7 +3253,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 403', () => pm.response.to.have.status(403));",
+                  "pm.test('status is 403', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(403));",
+                  "if (pm.response.code !== 403) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
                   "pm.test('error body has a message', () => pm.expect(pm.response.json().message).to.be.a('string'));"
                 ]
               }
@@ -3201,7 +3317,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('status is 400', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(400));",
+                  "if (pm.response.code !== 400) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
                   "pm.test('error body has a message', () => pm.expect(pm.response.json().message).to.be.a('string'));"
                 ]
               }
@@ -3258,7 +3375,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
                   "const j = pm.response.json();",
                   "pm.test('RESTORE request is PENDING', () => { pm.expect(j.changeType).to.eql('RESTORE'); pm.expect(j.status).to.eql('PENDING'); });",
                   "pm.test('new version 5', () => pm.expect(j.versionNumber).to.eql(5));"
@@ -3317,7 +3435,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 409', () => pm.response.to.have.status(409));",
+                  "pm.test('status is 409', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(409));",
+                  "if (pm.response.code !== 409) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
                   "pm.test('error body has a message', () => pm.expect(pm.response.json().message).to.be.a('string'));"
                 ]
               }
@@ -3373,7 +3492,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
                   "const j = pm.response.json();",
                   "const hit = j.content.find(c => String(c.templateId) === String(pm.collectionVariables.get('tid')) && c.changeType === 'RESTORE');",
                   "pm.test('pending RESTORE request for this template is in the queue', () => pm.expect(hit).to.exist);",
@@ -3435,7 +3555,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 403', () => pm.response.to.have.status(403));",
+                  "pm.test('status is 403', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(403));",
+                  "if (pm.response.code !== 403) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
                   "pm.test('error body has a message', () => pm.expect(pm.response.json().message).to.be.a('string'));"
                 ]
               }
@@ -3493,7 +3614,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
                   "const j = pm.response.json();",
                   "pm.test('APPROVED', () => pm.expect(j.status).to.eql('APPROVED'));"
                 ]
@@ -3536,7 +3658,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
                   "const j = pm.response.json();",
                   "pm.test('v5 ACTIVE', () => { pm.expect(j.versionNumber).to.eql(5); pm.expect(j.versionStatus).to.eql('ACTIVE'); });",
                   "pm.test('v1 subject restored', () => pm.expect(j.subject).to.eql('Action needed: Q3 filing due'));",
@@ -3582,7 +3705,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
                   "const j = pm.response.json();",
                   "const byNo = Object.fromEntries(j.map(v => [v.versionNumber, v]));",
                   "pm.test('v5 restored from v1', () => pm.expect(byNo[5].restoredFromVersionNumber).to.eql(1));",
@@ -3632,7 +3756,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 409', () => pm.response.to.have.status(409));",
+                  "pm.test('status is 409', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(409));",
+                  "if (pm.response.code !== 409) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
                   "pm.test('error body has a message', () => pm.expect(pm.response.json().message).to.be.a('string'));"
                 ]
               }
@@ -3689,7 +3814,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
                   "const j = pm.response.json();",
                   "pm.test('RETIRE pending', () => { pm.expect(j.changeType).to.eql('RETIRE'); pm.expect(j.status).to.eql('PENDING'); });"
                 ]
@@ -3747,7 +3873,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 409', () => pm.response.to.have.status(409));",
+                  "pm.test('status is 409', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(409));",
+                  "if (pm.response.code !== 409) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
                   "pm.test('error body has a message', () => pm.expect(pm.response.json().message).to.be.a('string'));"
                 ]
               }
@@ -3803,7 +3930,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
                   "const j = pm.response.json();",
                   "const hit = j.content.find(c => String(c.templateId) === String(pm.collectionVariables.get('tid')) && c.changeType === 'RETIRE');",
                   "pm.test('pending RETIRE request for this template is in the queue', () => pm.expect(hit).to.exist);",
@@ -3865,7 +3993,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));"
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one"
                 ]
               }
             }
@@ -3906,7 +4035,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
                   "const j = pm.response.json();",
                   "pm.test('RETIRED', () => pm.expect(j.templateStatus).to.eql('RETIRED'));"
                 ]
@@ -3950,7 +4080,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 409', () => pm.response.to.have.status(409));",
+                  "pm.test('status is 409', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(409));",
+                  "if (pm.response.code !== 409) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
                   "pm.test('error body has a message', () => pm.expect(pm.response.json().message).to.be.a('string'));"
                 ]
               }
@@ -4007,7 +4138,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 409', () => pm.response.to.have.status(409));",
+                  "pm.test('status is 409', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(409));",
+                  "if (pm.response.code !== 409) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
                   "pm.test('error body has a message', () => pm.expect(pm.response.json().message).to.be.a('string'));"
                 ]
               }
@@ -4064,7 +4196,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
                   "const j = pm.response.json();",
                   "pm.test('REACTIVATE pending', () => pm.expect(j.changeType).to.eql('REACTIVATE'));"
                 ]
@@ -4121,7 +4254,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
                   "const j = pm.response.json();",
                   "const hit = j.content.find(c => String(c.templateId) === String(pm.collectionVariables.get('tid')) && c.changeType === 'REACTIVATE');",
                   "pm.test('pending REACTIVATE request for this template is in the queue', () => pm.expect(hit).to.exist);",
@@ -4183,7 +4317,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));"
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one"
                 ]
               }
             }
@@ -4224,7 +4359,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
                   "const j = pm.response.json();",
                   "pm.test('ACTIVE', () => pm.expect(j.templateStatus).to.eql('ACTIVE'));"
                 ]
@@ -4282,7 +4418,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));"
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one"
                 ]
               }
             }
@@ -4337,7 +4474,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
                   "const j = pm.response.json();",
                   "const hit = j.content.find(c => String(c.templateId) === String(pm.collectionVariables.get('tid')) && c.changeType === 'RETIRE');",
                   "pm.test('pending RETIRE request for this template is in the queue', () => pm.expect(hit).to.exist);",
@@ -4399,7 +4537,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));"
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one"
                 ]
               }
             }
@@ -4445,7 +4584,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 204', () => pm.response.to.have.status(204));"
+                  "pm.test('status is 204', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(204));",
+                  "if (pm.response.code !== 204) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one"
                 ]
               }
             }
@@ -4486,7 +4626,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 404', () => pm.response.to.have.status(404));",
+                  "pm.test('status is 404', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(404));",
+                  "if (pm.response.code !== 404) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
                   "pm.test('error body has a message', () => pm.expect(pm.response.json().message).to.be.a('string'));"
                 ]
               }
@@ -4541,7 +4682,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 201', () => pm.response.to.have.status(201));",
+                  "pm.test('status is 201', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(201));",
+                  "if (pm.response.code !== 201) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
                   "const j = pm.response.json();",
                   "pm.collectionVariables.set('tidD', j.templateId);"
                 ]
@@ -4584,7 +4726,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 204', () => pm.response.to.have.status(204));"
+                  "pm.test('status is 204', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(204));",
+                  "if (pm.response.code !== 204) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one"
                 ]
               }
             }
@@ -4643,7 +4786,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 201', () => pm.response.to.have.status(201));",
+                  "pm.test('status is 201', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(201));",
+                  "if (pm.response.code !== 201) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
                   "const j = pm.response.json();",
                   "pm.collectionVariables.set('tidB', j.templateId);"
                 ]
@@ -4701,7 +4845,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));"
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one"
                 ]
               }
             }
@@ -4757,7 +4902,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));"
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one"
                 ]
               }
             }
@@ -4813,7 +4959,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));"
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one"
                 ]
               }
             }
@@ -4868,7 +5015,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
                   "const j = pm.response.json();",
                   "const hit = j.content.find(c => String(c.templateId) === String(pm.collectionVariables.get('tidB')) && c.changeType === 'NEW_TEMPLATE');",
                   "pm.test('pending NEW_TEMPLATE request for this template is in the queue', () => pm.expect(hit).to.exist);",
@@ -4930,7 +5078,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
                   "const j = pm.response.json();",
                   "pm.test('REJECTED', () => pm.expect(j.status).to.eql('REJECTED'));"
                 ]
@@ -4973,7 +5122,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
                   "const j = pm.response.json();",
                   "pm.test('DRAFT / REJECTED', () => { pm.expect(j.templateStatus).to.eql('DRAFT'); pm.expect(j.versionStatus).to.eql('REJECTED'); });",
                   "pm.test('rejection reason visible', () => pm.expect(j.rejectionReason).to.eql('Missing legal footer'));"
@@ -5018,7 +5168,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 409', () => pm.response.to.have.status(409));",
+                  "pm.test('status is 409', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(409));",
+                  "if (pm.response.code !== 409) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
                   "pm.test('error body has a message', () => pm.expect(pm.response.json().message).to.be.a('string'));"
                 ]
               }
@@ -5060,7 +5211,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 204', () => pm.response.to.have.status(204));"
+                  "pm.test('status is 204', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(204));",
+                  "if (pm.response.code !== 204) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one"
                 ]
               }
             }
@@ -5119,7 +5271,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 201', () => pm.response.to.have.status(201));",
+                  "pm.test('status is 201', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(201));",
+                  "if (pm.response.code !== 201) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
                   "const j = pm.response.json();",
                   "pm.collectionVariables.set('tidC', j.templateId);"
                 ]
@@ -5177,7 +5330,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));"
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one"
                 ]
               }
             }
@@ -5233,7 +5387,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));"
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one"
                 ]
               }
             }
@@ -5289,7 +5444,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));"
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one"
                 ]
               }
             }
@@ -5344,7 +5500,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
                   "const j = pm.response.json();",
                   "const hit = j.content.find(c => String(c.templateId) === String(pm.collectionVariables.get('tidC')) && c.changeType === 'NEW_TEMPLATE');",
                   "pm.test('pending NEW_TEMPLATE request for this template is in the queue', () => pm.expect(hit).to.exist);",
@@ -5392,7 +5549,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 403', () => pm.response.to.have.status(403));",
+                  "pm.test('status is 403', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(403));",
+                  "if (pm.response.code !== 403) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
                   "pm.test('error body has a message', () => pm.expect(pm.response.json().message).to.be.a('string'));"
                 ]
               }
@@ -5436,7 +5594,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
                   "const j = pm.response.json();",
                   "pm.test('WITHDRAWN', () => pm.expect(j.status).to.eql('WITHDRAWN'));"
                 ]
@@ -5486,7 +5645,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));"
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one"
                 ]
               }
             }
@@ -5527,7 +5687,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 204', () => pm.response.to.have.status(204));"
+                  "pm.test('status is 204', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(204));",
+                  "if (pm.response.code !== 204) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one"
                 ]
               }
             }
@@ -5582,7 +5743,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
                   "const j = pm.response.json();",
                   "pm.test('paged result', () => { pm.expect(j.content).to.be.an('array'); pm.expect(j.size).to.be.a('number'); });",
                   "pm.test('deleted templates never listed', () => pm.expect(j.content.map(t => String(t.templateId))).to.not.include.members([String(pm.collectionVariables.get('tid'))]));"
@@ -5631,7 +5793,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status is 200', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(200));",
+                  "if (pm.response.code !== 200) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
                   "const j = pm.response.json();",
                   "pm.test('only ACTIVE', () => j.content.forEach(t => pm.expect(t.status).to.eql('ACTIVE')));"
                 ]
@@ -5680,7 +5843,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 400', () => pm.response.to.have.status(400));"
+                  "pm.test('status is 400', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(400));",
+                  "if (pm.response.code !== 400) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one"
                 ]
               }
             }
@@ -5721,7 +5885,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 404', () => pm.response.to.have.status(404));",
+                  "pm.test('status is 404', () => pm.expect(pm.response.code, pm.response.text().slice(0, 500)).to.eql(404));",
+                  "if (pm.response.code !== 404) { pm.execution.setNextRequest(null); }  // stop: later steps depend on this one",
                   "pm.test('error body has a message', () => pm.expect(pm.response.json().message).to.be.a('string'));"
                 ]
               }
@@ -5766,6 +5931,18 @@
     }
   ],
   "variable": [
+    {
+      "key": "emailColumn",
+      "value": ""
+    },
+    {
+      "key": "nameColumn",
+      "value": ""
+    },
+    {
+      "key": "mergeColumn",
+      "value": ""
+    },
     {
       "key": "runId",
       "value": ""
