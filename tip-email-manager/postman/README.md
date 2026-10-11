@@ -33,3 +33,10 @@ Needs only a maker and a checker token (the checker just reads the approval queu
 template, so each flow first authors v1 and gets it approved (S steps), then edits it (E steps): start edit -> adopt latest
 query version -> edit content -> edit the recipients (mode-specific) -> submit -> approval queue -> approve -> history -> compare.
 Needs two different users (maker + checker). Same query and sample files as RecipientModes.
+
+## Demo collection (happy path, full lifecycle per recipient mode)
+
+`Demo.postman_collection.json` + `Demo.postman_environment.json` — for each of the four recipient modes, in six acts:
+author -> approve · edit (v2) -> approve · restore v1 (v3) -> approve · retire -> approve · reactivate -> approve · version history.
+No negative cases. After "View the template's version history", open the **Visualize** tab to show the history as a table.
+Run one mode folder (or all four) in the Collection Runner. Needs a maker and a different checker.
