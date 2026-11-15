@@ -1,0 +1,706 @@
+{
+  "info": {
+    "_postman_id": "a4f8b921-12e4-4c88-9b10-998877665544",
+    "name": "TIP Email Manager - Email Sends (All Scenarios - CurrentUserInfo)",
+    "description": "End-to-end Postman test collection covering all Email Send scenarios using server-side CurrentUserInfo.getCurrentUserEmail() resolution via Bearer authentication.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "if (!pm.collectionVariables.get('runId')) { pm.collectionVariables.set('runId', Date.now()); }"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "Scenario 1: Internal-Only Send (Define at Send) & Delivery Tracking",
+      "item": [
+        {
+          "name": "1.1 Get Active Approved Templates",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/sends/templates",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "email-manager", "sends", "templates"]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{makerToken}}", "type": "string" }]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.expect(pm.response.code).to.eql(200));",
+                  "const list = pm.response.json();",
+                  "pm.test('Returns array of active templates', () => pm.expect(list).to.be.an('array'));",
+                  "if (list.length > 0 && !pm.collectionVariables.get('activeTemplateId')) {",
+                  "  pm.collectionVariables.set('activeTemplateId', list[0].templateId);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.2 Preview Internal-Only Send (1st Row Sample & Domain Check)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/sends/preview",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "email-manager", "sends", "preview"]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{makerToken}}", "type": "string" }]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"templateId\": {{activeTemplateId}},\n  \"adHocRecipients\": [\n    {\n      \"recipientName\": \"Alice Internal\",\n      \"recipientEmail\": \"alice.internal@fdic.gov\",\n      \"mergeValues\": { \"c_name\": \"Alice Internal\" }\n    },\n    {\n      \"recipientName\": \"Bob Internal\",\n      \"recipientEmail\": \"bob.internal@fdic.gov\",\n      \"mergeValues\": { \"c_name\": \"Bob Internal\" }\n    }\n  ]\n}",
+              "options": { "raw": { "language": "json" } }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.expect(pm.response.code).to.eql(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('Total recipients is 2', () => pm.expect(j.totalRecipients).to.eql(2));",
+                  "pm.test('External recipients is 0', () => pm.expect(j.externalRecipients).to.eql(0));",
+                  "pm.test('Requires external approval is false', () => pm.expect(j.requiresExternalApproval).to.eql(false));",
+                  "pm.test('No address conflicts', () => pm.expect(j.hasAddressConflict).to.eql(false));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.3 Submit Internal-Only Send (Queues Immediately)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/sends",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "email-manager", "sends"]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{makerToken}}", "type": "string" }]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"templateId\": {{activeTemplateId}},\n  \"adHocRecipients\": [\n    {\n      \"recipientName\": \"Alice Internal\",\n      \"recipientEmail\": \"alice.internal@fdic.gov\",\n      \"mergeValues\": { \"c_name\": \"Alice Internal\" }\n    },\n    {\n      \"recipientName\": \"Bob Internal\",\n      \"recipientEmail\": \"bob.internal@fdic.gov\",\n      \"mergeValues\": { \"c_name\": \"Bob Internal\" }\n    }\n  ]\n}",
+              "options": { "raw": { "language": "json" } }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201 Created', () => pm.expect(pm.response.code).to.eql(201));",
+                  "const j = pm.response.json();",
+                  "pm.test('Internal send bypasses review and is QUEUED', () => pm.expect(j.status).to.eql('QUEUED'));",
+                  "pm.test('submittedBy populated from CurrentUserInfo', () => pm.expect(j.submittedBy).to.be.a('string').and.not.be.empty);",
+                  "pm.collectionVariables.set('internalSendId', j.sendId);",
+                  "if (j.recipients && j.recipients.length >= 2) {",
+                  "  pm.collectionVariables.set('recipient1Id', j.recipients[0].sendRecipientId);",
+                  "  pm.collectionVariables.set('recipient2Id', j.recipients[1].sendRecipientId);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.4 Simulate Delivery Callback - Recipient 1 Delivered",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/sends/{{internalSendId}}/delivery-callback",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "email-manager", "sends", "{{internalSendId}}", "delivery-callback"]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{makerToken}}", "type": "string" }]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sendRecipientId\": {{recipient1Id}},\n  \"delivered\": true,\n  \"bounceCategory\": \"NONE\",\n  \"failureReason\": null\n}",
+              "options": { "raw": { "language": "json" } }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.expect(pm.response.code).to.eql(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.5 Simulate Delivery Callback - Recipient 2 Permanent Bounce",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/sends/{{internalSendId}}/delivery-callback",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "email-manager", "sends", "{{internalSendId}}", "delivery-callback"]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{makerToken}}", "type": "string" }]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sendRecipientId\": {{recipient2Id}},\n  \"delivered\": false,\n  \"bounceCategory\": \"PERMANENT\",\n  \"failureReason\": \"550 5.1.1 User unknown\"\n}",
+              "options": { "raw": { "language": "json" } }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.expect(pm.response.code).to.eql(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.6 Verify Completed Send Detail & Export Eligibility",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/sends/{{internalSendId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "email-manager", "sends", "{{internalSendId}}"]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{makerToken}}", "type": "string" }]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.expect(pm.response.code).to.eql(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('Send status is COMPLETED', () => pm.expect(j.status).to.eql('COMPLETED'));",
+                  "pm.test('Delivered=1, Failed=1', () => { pm.expect(j.deliveredCount).to.eql(1); pm.expect(j.failedCount).to.eql(1); });",
+                  "pm.test('canExportFailedCsv is true', () => pm.expect(j.canExportFailedCsv).to.eql(true));",
+                  "pm.test('canCancel is false', () => pm.expect(j.canCancel).to.eql(false));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.7 Export Failed Deliveries CSV",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/sends/{{internalSendId}}/failed-recipients/export",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "email-manager", "sends", "{{internalSendId}}", "failed-recipients", "export"]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{makerToken}}", "type": "string" }]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.expect(pm.response.code).to.eql(200));",
+                  "const csv = pm.response.text();",
+                  "pm.test('CSV contains header and failed recipient', () => {",
+                  "  pm.expect(csv).to.include('Recipient Name,Recipient Email,Failure Reason');",
+                  "  pm.expect(csv).to.include('bob.internal@fdic.gov');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Scenario 2: External Send & Reviewer Approval (EM-15)",
+      "item": [
+        {
+          "name": "2.1 Submit Send with External Recipient (Routes to PENDING_REVIEW)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/sends",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "email-manager", "sends"]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{makerToken}}", "type": "string" }]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"templateId\": {{activeTemplateId}},\n  \"adHocRecipients\": [\n    {\n      \"recipientName\": \"Internal Audit\",\n      \"recipientEmail\": \"audit@fdic.gov\",\n      \"mergeValues\": { \"c_name\": \"Internal Audit\" }\n    },\n    {\n      \"recipientName\": \"External Partner\",\n      \"recipientEmail\": \"compliance@partnerbank.com\",\n      \"mergeValues\": { \"c_name\": \"External Partner\" }\n    }\n  ]\n}",
+              "options": { "raw": { "language": "json" } }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201 Created', () => pm.expect(pm.response.code).to.eql(201));",
+                  "const j = pm.response.json();",
+                  "pm.test('Status is PENDING_REVIEW', () => pm.expect(j.status).to.eql('PENDING_REVIEW'));",
+                  "pm.test('External count is 1', () => pm.expect(j.externalRecipients).to.eql(1));",
+                  "pm.test('Outcome message indicates not dispatched', () => pm.expect(j.deliveryOutcomeMessage).to.eql('These emails have not been dispatched.'));",
+                  "pm.collectionVariables.set('externalApproveSendId', j.sendId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.2 Fetch External Recipient Approval Queue (Checker)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/sends/external-approvals",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "email-manager", "sends", "external-approvals"]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{checkerToken}}", "type": "string" }]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.expect(pm.response.code).to.eql(200));",
+                  "const content = pm.response.json().content;",
+                  "const found = content.some(item => String(item.sendId) === String(pm.collectionVariables.get('externalApproveSendId')));",
+                  "pm.test('Submitted external send appears in approval queue', () => pm.expect(found).to.eql(true));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.3 Approve External Send (Checker)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/sends/external-approvals/{{externalApproveSendId}}/decision",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "email-manager", "sends", "external-approvals", "{{externalApproveSendId}}", "decision"]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{checkerToken}}", "type": "string" }]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"approved\": true,\n  \"comments\": \"Partner agency recipients verified and approved.\"\n}",
+              "options": { "raw": { "language": "json" } }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.expect(pm.response.code).to.eql(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('Approved send transitions to QUEUED', () => pm.expect(j.status).to.eql('QUEUED'));",
+                  "pm.test('reviewedBy populated from CurrentUserInfo', () => pm.expect(j.reviewedBy).to.be.a('string').and.not.be.empty);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Scenario 3: External Send (Data Source Query) & Reviewer Rejection",
+      "item": [
+        {
+          "name": "3.1 Submit Query-Driven Send with External Recipients",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/sends",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "email-manager", "sends"]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{makerToken}}", "type": "string" }]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"templateId\": {{queryTemplateId}},\n  \"queryParameters\": {\n    \"status\": \"ACTIVE\"\n  }\n}",
+              "options": { "raw": { "language": "json" } }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201 Created', () => pm.expect(pm.response.code).to.eql(201));",
+                  "const j = pm.response.json();",
+                  "pm.collectionVariables.set('externalRejectSendId', j.sendId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.2 Reject External Send with Mandatory Reason (Checker)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/sends/external-approvals/{{externalRejectSendId}}/decision",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "email-manager", "sends", "external-approvals", "{{externalRejectSendId}}", "decision"]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{checkerToken}}", "type": "string" }]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"approved\": false,\n  \"comments\": \"Confirm partner-agency list before re-submitting.\"\n}",
+              "options": { "raw": { "language": "json" } }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.expect(pm.response.code).to.eql(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('Status is REJECTED_BY_REVIEWER', () => pm.expect(j.status).to.eql('REJECTED_BY_REVIEWER'));",
+                  "pm.test('CSV export disabled for rejected send', () => pm.expect(j.canExportFailedCsv).to.eql(false));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Scenario 4: Send via Excel Upload & Submitter Cancellation",
+      "item": [
+        {
+          "name": "4.1 Upload Ad-Hoc Excel Recipient File (.xlsx)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/sends/templates/{{fileUploadTemplateId}}/upload-recipients",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "email-manager", "sends", "templates", "{{fileUploadTemplateId}}", "upload-recipients"]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{makerToken}}", "type": "string" }]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "ad_hoc_recipients.xlsx"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.expect(pm.response.code).to.eql(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('Returns uploadSessionToken', () => pm.expect(j.uploadSessionToken).to.be.a('string'));",
+                  "pm.collectionVariables.set('uploadSessionToken', j.uploadSessionToken);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.2 Preview Uploaded Recipients",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/sends/preview",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "email-manager", "sends", "preview"]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{makerToken}}", "type": "string" }]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"templateId\": {{fileUploadTemplateId}},\n  \"uploadSessionToken\": \"{{uploadSessionToken}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.expect(pm.response.code).to.eql(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.3 Submit File Upload Send",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/sends",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "email-manager", "sends"]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{makerToken}}", "type": "string" }]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"templateId\": {{fileUploadTemplateId}},\n  \"uploadSessionToken\": \"{{uploadSessionToken}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201 Created', () => pm.expect(pm.response.code).to.eql(201));",
+                  "const j = pm.response.json();",
+                  "pm.collectionVariables.set('cancelableSendId', j.sendId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.4 Cancel Send Prior to Review/Dispatch (Maker)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/sends/{{cancelableSendId}}/cancel",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "email-manager", "sends", "{{cancelableSendId}}", "cancel"]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{makerToken}}", "type": "string" }]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.expect(pm.response.code).to.eql(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('Status is CANCELED', () => pm.expect(j.status).to.eql('CANCELED'));",
+                  "pm.test('Outcome message indicates not dispatched', () => pm.expect(j.deliveryOutcomeMessage).to.eql('These emails have not been dispatched.'));",
+                  "pm.test('CSV export disabled for canceled send', () => pm.expect(j.canExportFailedCsv).to.eql(false));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.5 Verify My Send History (Filtered by CurrentUserInfo)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/sends?page=0&size=25",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "email-manager", "sends"],
+              "query": [
+                { "key": "page", "value": "0" },
+                { "key": "size", "value": "25" }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{makerToken}}", "type": "string" }]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.expect(pm.response.code).to.eql(200));",
+                  "pm.test('Returns paginated send history', () => pm.expect(pm.response.json().content).to.be.an('array'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Scenario 5: Contact / Distribution List Mode Send",
+      "item": [
+        {
+          "name": "5.1 Preview Contact / Distribution List Send",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/sends/preview",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "email-manager", "sends", "preview"]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{makerToken}}", "type": "string" }]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"templateId\": {{contactListTemplateId}}\n}",
+              "options": { "raw": { "language": "json" } }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.expect(pm.response.code).to.eql(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('Mode is CONTACT_DISTRIBUTION_LIST', () => pm.expect(j.recipientMode).to.eql('CONTACT_DISTRIBUTION_LIST'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "5.2 Submit Contact / Distribution List Send",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/email-manager/sends",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "email-manager", "sends"]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{makerToken}}", "type": "string" }]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"templateId\": {{contactListTemplateId}}\n}",
+              "options": { "raw": { "language": "json" } }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201 Created', () => pm.expect(pm.response.code).to.eql(201));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080" },
+    { "key": "makerToken", "value": "" },
+    { "key": "checkerToken", "value": "" },
+    { "key": "activeTemplateId", "value": "1" },
+    { "key": "queryTemplateId", "value": "2" },
+    { "key": "fileUploadTemplateId", "value": "3" },
+    { "key": "contactListTemplateId", "value": "4" },
+    { "key": "runId", "value": "" },
+    { "key": "internalSendId", "value": "" },
+    { "key": "recipient1Id", "value": "" },
+    { "key": "recipient2Id", "value": "" },
+    { "key": "externalApproveSendId", "value": "" },
+    { "key": "externalRejectSendId", "value": "" },
+    { "key": "uploadSessionToken", "value": "" },
+    { "key": "cancelableSendId", "value": "" }
+  ]
+}
