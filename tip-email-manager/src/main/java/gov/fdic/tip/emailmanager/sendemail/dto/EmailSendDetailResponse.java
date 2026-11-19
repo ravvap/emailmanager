@@ -1,16 +1,18 @@
 package gov.fdic.tip.emailmanager.sendemail.dto;
 
+import gov.fdic.tip.emailmanager.sendemail.constants.AppConstants.EmailSendStatus;
+ import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
 import java.time.OffsetDateTime;
 import java.util.List;
 
-import com.fdic.tip.emailmanager.template.enums.RecipientMode;
-
-import gov.fdic.tip.emailmanager.sendemail.constants.AppConstants.EmailSendStatus;
-import lombok.Builder;
-import lombok.Data;
-
 @Data
 @Builder
+@NoArgsConstructor
+@AllArgsConstructor
 public class EmailSendDetailResponse {
     private Long sendId;
     private Long templateId;
