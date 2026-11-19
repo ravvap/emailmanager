@@ -1,5 +1,7 @@
 package gov.fdic.tip.emailmanager.sendemail.repository;
 
+import java.util.List;
+
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -15,4 +17,8 @@ public interface EmailSendRepository extends JpaRepository<EmailSend, Long> {
     // Reviewer queue for External Recipient Sends
     Page<EmailSend> findByStatusAndExternalRecipientsGreaterThanOrderBySubmittedAtDesc(
             EmailSendStatus status, int minExternalRecipients, Pageable pageable);
+    
+    
+ // Finds all email sends submitted by a specific user (matched by username/email)
+    List<EmailSend> findBySubmittedBy(String submittedBy);
 }

@@ -244,6 +244,44 @@ public class EmailSendService {
         return isInternal ? RecipientClassification.INTERNAL : RecipientClassification.EXTERNAL;
     }
 
+     @Transactional(readOnly = true)
+    public List<EmailSendSummaryResponse> listAllEmailSends() {
+        List<EmailSend> allSends = sendRepository.findAll();
+        
+        // Explicit type declaration (EmailSend send) avoids type inference errors
+        return allSends.stream()
+                .map((EmailSend send) -> EmailSendSummaryResponse.builder()
+                        .sendId(send.getSendId())
+                        .templateId(send.getTemplateId())
+                        .templateName(send.getTemplateName())
+                        .totalRecipients(send.getTotalRecipients())
+                        .deliveredCount(send.getDeliveredCount())
+                        .failedCount(send.getFailedCount())
+                        .status(send.getStatus())
+                        .submittedBy(send.getSubmittedBy())
+                        .submittedAt(send.getSubmittedAt())
+                        .build())
+                .collect(Collectors.toList());
+    }
+
+     @Transactional(readOnly = true)
+    public List<EmailSendSummaryResponse> findSendsBySubmittedBy(String username) {
+        List<EmailSend> userSends = sendRepository.findBySubmittedBy(username);
+        
+        return userSends.stream()
+                .map((EmailSend send) -> EmailSendSummaryResponse.builder()
+                        .sendId(send.getSendId())
+                        .templateId(send.getTemplateId())
+                        .templateName(send.getTemplateName())
+                        .totalRecipients(send.getTotalRecipients())
+                        .deliveredCount(send.getDeliveredCount())
+                        .failedCount(send.getFailedCount())
+                        .status(send.getStatus())
+                        .submittedBy(send.getSubmittedBy())
+                        .submittedAt(send.getSubmittedAt())
+                        .build())
+                .collect(Collectors.toList());
+    }
     // ===================================================================
     // 5. Cancel Send, History, Approvals & Callbacks
     // ===================================================================

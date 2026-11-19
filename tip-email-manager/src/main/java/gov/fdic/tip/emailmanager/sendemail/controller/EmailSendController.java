@@ -23,6 +23,11 @@ public class EmailSendController {
 
     private final EmailSendService emailSendService;
 
+    @GetMapping
+    public ResponseEntity<List<EmailSendSummaryResponse>> getAllEmailSends() {
+        List<EmailSendSummaryResponse> sends = emailSendService.listAllEmailSends();
+        return ResponseEntity.ok(sends);
+    }
     // ---- Template dropdown (Active, approved template versions only) ----
     @GetMapping("/templates")
     public ResponseEntity<List<EmailTemplateSummaryResponse>> getActiveTemplates() {
