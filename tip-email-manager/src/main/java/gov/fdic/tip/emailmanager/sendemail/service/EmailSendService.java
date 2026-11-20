@@ -310,16 +310,64 @@ public class EmailSendService {
     public EmailSendDetailResponse getSendDetail(Long sendId) {
         EmailSend send = getSendOrThrow(sendId);
         List<EmailSendRecipient> recipients = sendRecipientRepository.findByEmailSend_SendIdOrderBySendRecipientIdAsc(sendId);
+
+        // 1. Determine status-specific outcome messages and export flags based on UI requirements
+        String outcomeMessage;
+        boolean canExportCsv = false;
+        boolean canCancelSend = false;
+
+        switch (send.getStatus()) {
+            case COMPLETED, IN_PROGRESS -> {
+                outcomeMessage = "Email dispatch execution completed. Delivered: " + send.getDeliveredCount() 
+                               + ", Failed: " + send.getFailedCount();
+                canExportCsv = (send.getFailedCount() > 0); // Export failed deliveries allowed only if failures exist[cite: 8, 10]
+            }
+            case FAILED -> {
+                outcomeMessage = "Email dispatch failed.";
+                canExportCsv = (send.getFailedCount() > 0);[cite: 8]
+            }
+            case PENDING_REVIEW, CANCELED, REJECTED_BY_REVIEWER -> {
+                outcomeMessage = "These emails have not been dispatched.";[cite: 9, 11]
+                canExportCsv = false; // No CSV export for non-dispatched states[cite: 9, 11]
+                if (send.getStatus() == EmailSendStatus.PENDING_REVIEW) {
+                    canCancelSend = true;
+                }
+            }
+            case QUEUED -> {
+                outcomeMessage = "Email send is queued for dispatch.";
+                canExportCsv = false;
+                canCancelSend = true;
+            }
+            default -> outcomeMessage = "Status unknown.";
+        }
+
+        // 2. Build and return full detail response
         return EmailSendDetailResponse.builder()
                 .sendId(send.getSendId())
+                .templateId(send.getTemplateId())
+                .templateVersionId(send.getTemplateVersionId())
                 .templateName(send.getTemplateName())
+                .recipientMode(send.getRecipientMode())
                 .status(send.getStatus())
+                .deliveryOutcomeMessage(outcomeMessage)
+                .canCancel(canCancelSend)
+                .canExportFailedCsv(canExportCsv)
                 .totalRecipients(send.getTotalRecipients())
                 .externalRecipients(send.getExternalRecipients())
+                .deliveredCount(send.getDeliveredCount())
+                .failedCount(send.getFailedCount())
+                .subject(send.getFrozenSubject())
+                .renderedSampleBodyHtml(send.getFrozenBodyHtml())
+                .submittedBy(send.getSubmittedBy())
+                .submittedAt(send.getSubmittedAt())
+                .reviewedBy(send.getReviewedBy())
+                .reviewedAt(send.getReviewedAt())
+                .reviewComments(send.getReviewComments())
+                .canceledAt(send.getCanceledAt())
+                .completedAt(send.getCompletedAt())
                 .recipients(recipients.stream().map(this::toRecipientResponse).collect(Collectors.toList()))
                 .build();
     }
-
     @Override
     @Transactional(readOnly = true)
     public byte[] exportFailedDeliveriesCsv(Long sendId) {
